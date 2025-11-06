@@ -100,6 +100,10 @@ public class ClientHandler extends Thread {
                 server.broadcastMessage(msg);
                 break;
                 
+            case FILE_TRANSFER:
+                handleFileTransfer(msg);
+                break;
+                
             case CREATE_ROOM:
                 server.createRoom(msg.getContent(), msg.getSender());
                 break;
@@ -128,6 +132,24 @@ public class ClientHandler extends Thread {
         } catch (IOException e) {
             String uname = (user != null ? user.getUsername() : "unknown");
             server.log("Không thể gửi message đến " + uname);
+        }
+    }
+    
+    private void handleFileTransfer(Message msg) {
+        String receiver = msg.getReceiver();
+        
+        if (receiver == null) {
+            // Broadcast file to all
+            server.broadcastMessage(msg);
+            server.log(user.getUsername() + " sent file to all: " + msg.getFileName());
+        } else if (receiver.startsWith("#")) {
+            // Room file transfer
+            server.sendRoomMessage(msg);
+            server.log(user.getUsername() + " sent file to room " + receiver + ": " + msg.getFileName());
+        } else {
+            // Private file transfer
+            server.sendPrivateMessage(msg);
+            server.log(user.getUsername() + " sent file to " + receiver + ": " + msg.getFileName());
         }
     }
     

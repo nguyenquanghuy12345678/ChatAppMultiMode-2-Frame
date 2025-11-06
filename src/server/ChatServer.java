@@ -24,10 +24,10 @@ public class ChatServer {
         this.chatRooms = new ConcurrentHashMap<>();
         this.running = false;
         
-        // Tạo một số room mặc định
-        chatRooms.put("General", new ChatRoom("General", "SYSTEM"));
-        chatRooms.put("Gaming", new ChatRoom("Gaming", "SYSTEM"));
-        chatRooms.put("Study", new ChatRoom("Study", "SYSTEM"));
+        // Tạo một số room mặc định (với # prefix)
+        chatRooms.put("#General", new ChatRoom("General", "SYSTEM"));
+        chatRooms.put("#Gaming", new ChatRoom("Gaming", "SYSTEM"));
+        chatRooms.put("#Study", new ChatRoom("Study", "SYSTEM"));
     }
     
     public void setUI(ServerUI ui) {
@@ -181,13 +181,16 @@ public class ChatServer {
             return;
         }
 
-        if (!chatRooms.containsKey(normalized)) {
+        // Ensure room name has # prefix
+        String fullRoomName = normalized.startsWith("#") ? normalized : "#" + normalized;
+
+        if (!chatRooms.containsKey(fullRoomName)) {
             ChatRoom room = new ChatRoom(normalized, creator);
-            chatRooms.put(normalized, room);
+            chatRooms.put(fullRoomName, room);
 
-            broadcastRoomList("Room mới: " + normalized);
+            broadcastRoomList("Room mới: " + fullRoomName);
 
-            log("Room mới được tạo: " + normalized + " bởi " + creator);
+            log("Room mới được tạo: " + fullRoomName + " bởi " + creator);
             updateUI();
         } else {
             ClientHandler creatorHandler = clients.get(creator);
@@ -199,24 +202,27 @@ public class ChatServer {
     }
     
     public void joinRoom(String roomName, String username) {
-        ChatRoom room = chatRooms.get(roomName);
+        // Ensure room name has # prefix
+        String fullRoomName = roomName.startsWith("#") ? roomName : "#" + roomName;
+        
+        ChatRoom room = chatRooms.get(fullRoomName);
         ClientHandler handler = clients.get(username);
         
         if (room != null && handler != null) {
             if (room.addMember(username)) {
-                handler.getUser().setCurrentRoom(roomName);
+                handler.getUser().setCurrentRoom(fullRoomName);
                 
                 Message success = new Message(Message.MessageType.SUCCESS, "SERVER", 
-                    "Đã tham gia room: " + roomName);
+                    "Đã tham gia room: " + fullRoomName);
                 handler.sendMessage(success);
                 
                 // Thông báo cho các thành viên khác
                 Message notification = new Message(Message.MessageType.ROOM_MSG, "SERVER", 
                     username + " đã tham gia room");
-                notification.setReceiver(roomName);
+                notification.setReceiver(fullRoomName);
                 sendRoomMessage(notification);
                 
-                log(username + " đã tham gia room: " + roomName);
+                log(username + " đã tham gia room: " + fullRoomName);
                 broadcastRoomList(null);
                 updateUI();
             } else {
@@ -228,7 +234,10 @@ public class ChatServer {
     }
     
     public void leaveRoom(String roomName, String username) {
-        ChatRoom room = chatRooms.get(roomName);
+        // Ensure room name has # prefix
+        String fullRoomName = roomName.startsWith("#") ? roomName : "#" + roomName;
+        
+        ChatRoom room = chatRooms.get(fullRoomName);
         ClientHandler handler = clients.get(username);
         
         if (room != null && handler != null) {
@@ -236,16 +245,16 @@ public class ChatServer {
             handler.getUser().setCurrentRoom(null);
             
             Message success = new Message(Message.MessageType.SUCCESS, "SERVER", 
-                "Đã rời room: " + roomName);
+                "Đã rời room: " + fullRoomName);
             handler.sendMessage(success);
             
             // Thông báo cho các thành viên khác
             Message notification = new Message(Message.MessageType.ROOM_MSG, "SERVER", 
                 username + " đã rời room");
-            notification.setReceiver(roomName);
+            notification.setReceiver(fullRoomName);
             sendRoomMessage(notification);
             
-            log(username + " đã rời room: " + roomName);
+            log(username + " đã rời room: " + fullRoomName);
             broadcastRoomList(null);
             updateUI();
         }

@@ -18,6 +18,7 @@ public class Message implements Serializable {
         LEAVE_ROOM,      // Rời room
         ROOM_LIST,       // Danh sách rooms
         CREATE_ROOM,     // Tạo room mới
+        FILE_TRANSFER,   // Gửi file/ảnh
         SUCCESS,         // Thành công
         ERROR            // Lỗi
     }
@@ -28,6 +29,11 @@ public class Message implements Serializable {
     private String content;
     private String timestamp;
     private Object data;      // Dữ liệu bổ sung (danh sách user, room...)
+    
+    // File transfer fields
+    private String fileName;
+    private byte[] fileData;
+    private long fileSize;
     
     public Message(MessageType type, String sender, String content) {
         this.type = type;
@@ -56,6 +62,16 @@ public class Message implements Serializable {
     
     public Object getData() { return data; }
     public void setData(Object data) { this.data = data; }
+    
+    // File transfer getters and setters
+    public String getFileName() { return fileName; }
+    public void setFileName(String fileName) { this.fileName = fileName; }
+    
+    public byte[] getFileData() { return fileData; }
+    public void setFileData(byte[] fileData) { this.fileData = fileData; }
+    
+    public long getFileSize() { return fileSize; }
+    public void setFileSize(long fileSize) { this.fileSize = fileSize; }
     
     @Override
     public String toString() {

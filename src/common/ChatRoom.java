@@ -13,7 +13,8 @@ public class ChatRoom implements Serializable {
     private int maxMembers;
     
     public ChatRoom(String roomName, String creator) {
-        this.roomName = roomName;
+        // Ensure room name has # prefix for consistency
+        this.roomName = roomName.startsWith("#") ? roomName : "#" + roomName;
         this.creator = creator;
         this.members = new HashSet<>();
         this.members.add(creator);
@@ -48,6 +49,13 @@ public class ChatRoom implements Serializable {
     
     public int getMaxMembers() { return maxMembers; }
     public void setMaxMembers(int maxMembers) { this.maxMembers = maxMembers; }
+    
+    /**
+     * Get room name without # prefix for display
+     */
+    public String getDisplayName() {
+        return roomName.startsWith("#") ? roomName.substring(1) : roomName;
+    }
     
     @Override
     public String toString() {
