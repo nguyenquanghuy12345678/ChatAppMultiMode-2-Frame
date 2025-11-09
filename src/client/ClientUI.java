@@ -330,21 +330,35 @@ public class ClientUI extends JFrame {
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
         buttonPanel.setBackground(BACKGROUND_COLOR);
         
-        broadcastEmojiButton = createStyledButton("😊", new Color(241, 196, 15));
+        broadcastEmojiButton = createStyledButton("", new Color(241, 196, 15));
         broadcastEmojiButton.setPreferredSize(new Dimension(50, 40));
-        broadcastEmojiButton.setFont(new Font("Segoe UI", Font.BOLD, 11));
-        broadcastEmojiButton.setText("😊");
+        ImageIcon emojiIcon1 = IconManager.loadIcon("emoji_smile.png", 24);
+        if (emojiIcon1 != null) {
+            broadcastEmojiButton.setIcon(emojiIcon1);
+        } else {
+            broadcastEmojiButton.setText("😊");
+        }
+        broadcastEmojiButton.setToolTipText("Insert Emoji");
         broadcastEmojiButton.addActionListener(e -> showEmojiPicker(broadcastInput));
         
-        broadcastFileButton = createStyledButton("📁", new Color(155, 89, 182));
-        broadcastFileButton.setPreferredSize(new Dimension(50, 40));
+        broadcastFileButton = createStyledButton("File", new Color(155, 89, 182));
+        broadcastFileButton.setPreferredSize(new Dimension(60, 40));
+        broadcastFileButton.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        broadcastFileButton.setToolTipText("Send File");
         broadcastFileButton.addActionListener(e -> sendFile("broadcast"));
+        
+        JButton broadcastScreenshotButton = createStyledButton("📸", new Color(46, 204, 113));
+        broadcastScreenshotButton.setPreferredSize(new Dimension(50, 40));
+        broadcastScreenshotButton.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        broadcastScreenshotButton.setToolTipText("Send Screenshot");
+        broadcastScreenshotButton.addActionListener(e -> sendScreenshot("broadcast"));
         
         broadcastSendButton = createStyledButton("Send", new Color(52, 152, 219));
         broadcastSendButton.addActionListener(e -> sendBroadcastMessage());
         
         buttonPanel.add(broadcastEmojiButton);
         buttonPanel.add(broadcastFileButton);
+        buttonPanel.add(broadcastScreenshotButton);
         buttonPanel.add(broadcastSendButton);
         
         inputPanel.add(broadcastInput, BorderLayout.CENTER);
@@ -402,21 +416,42 @@ public class ClientUI extends JFrame {
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
         buttonPanel.setBackground(BACKGROUND_COLOR);
         
-        privateEmojiButton = createStyledButton("😊", new Color(241, 196, 15));
+        privateEmojiButton = createStyledButton("", new Color(241, 196, 15));
         privateEmojiButton.setPreferredSize(new Dimension(50, 40));
-        privateEmojiButton.setFont(new Font("Segoe UI", Font.BOLD, 11));
-        privateEmojiButton.setText("😊");
+        ImageIcon emojiIcon2 = IconManager.loadIcon("emoji_smile.png", 24);
+        if (emojiIcon2 != null) {
+            privateEmojiButton.setIcon(emojiIcon2);
+        } else {
+            privateEmojiButton.setText("😊");
+        }
+        privateEmojiButton.setToolTipText("Insert Emoji");
         privateEmojiButton.addActionListener(e -> showEmojiPicker(privateInput));
         
-        privateFileButton = createStyledButton("📁", new Color(155, 89, 182));
-        privateFileButton.setPreferredSize(new Dimension(50, 40));
+        privateFileButton = createStyledButton("File", new Color(155, 89, 182));
+        privateFileButton.setPreferredSize(new Dimension(60, 40));
+        privateFileButton.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        privateFileButton.setToolTipText("Send File");
         privateFileButton.addActionListener(e -> sendFile("private"));
+        
+        JButton privateScreenshotButton = createStyledButton("📸", new Color(46, 204, 113));
+        privateScreenshotButton.setPreferredSize(new Dimension(50, 40));
+        privateScreenshotButton.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        privateScreenshotButton.setToolTipText("Send Screenshot");
+        privateScreenshotButton.addActionListener(e -> sendScreenshot("private"));
+        
+        JButton privateVideoCallButton = createStyledButton("📹", new Color(231, 76, 60));
+        privateVideoCallButton.setPreferredSize(new Dimension(50, 40));
+        privateVideoCallButton.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        privateVideoCallButton.setToolTipText("Video Call");
+        privateVideoCallButton.addActionListener(e -> startVideoCall());
         
         privateSendButton = createStyledButton("Send", SUCCESS_COLOR);
         privateSendButton.addActionListener(e -> sendPrivateMessage());
         
         buttonPanel.add(privateEmojiButton);
         buttonPanel.add(privateFileButton);
+        buttonPanel.add(privateScreenshotButton);
+        buttonPanel.add(privateVideoCallButton);
         buttonPanel.add(privateSendButton);
         
         inputPanel.add(privateInput, BorderLayout.CENTER);
@@ -496,17 +531,31 @@ public class ClientUI extends JFrame {
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
         buttonPanel.setBackground(BACKGROUND_COLOR);
         
-        roomEmojiButton = createStyledButton("😊", new Color(241, 196, 15));
+        roomEmojiButton = createStyledButton("", new Color(241, 196, 15));
         roomEmojiButton.setPreferredSize(new Dimension(50, 40));
-        roomEmojiButton.setFont(new Font("Segoe UI", Font.BOLD, 11));
-        roomEmojiButton.setText("😊");
+        ImageIcon emojiIcon3 = IconManager.loadIcon("emoji_smile.png", 24);
+        if (emojiIcon3 != null) {
+            roomEmojiButton.setIcon(emojiIcon3);
+        } else {
+            roomEmojiButton.setText("😊");
+        }
+        roomEmojiButton.setToolTipText("Insert Emoji");
         roomEmojiButton.setEnabled(false);
         roomEmojiButton.addActionListener(e -> showEmojiPicker(roomInput));
         
-        roomFileButton = createStyledButton("📁", new Color(155, 89, 182));
-        roomFileButton.setPreferredSize(new Dimension(50, 40));
+        roomFileButton = createStyledButton("File", new Color(155, 89, 182));
+        roomFileButton.setPreferredSize(new Dimension(60, 40));
+        roomFileButton.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        roomFileButton.setToolTipText("Send File");
         roomFileButton.setEnabled(false);
         roomFileButton.addActionListener(e -> sendFile("room"));
+        
+        JButton roomScreenshotButton = createStyledButton("📸", new Color(46, 204, 113));
+        roomScreenshotButton.setPreferredSize(new Dimension(50, 40));
+        roomScreenshotButton.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        roomScreenshotButton.setToolTipText("Send Screenshot");
+        roomScreenshotButton.setEnabled(false);
+        roomScreenshotButton.addActionListener(e -> sendScreenshot("room"));
         
         roomSendButton = createStyledButton("Send", SUCCESS_COLOR);
         roomSendButton.setEnabled(false);
@@ -514,6 +563,7 @@ public class ClientUI extends JFrame {
         
         buttonPanel.add(roomEmojiButton);
         buttonPanel.add(roomFileButton);
+        buttonPanel.add(roomScreenshotButton);
         buttonPanel.add(roomSendButton);
         
         inputPanel.add(roomInput, BorderLayout.CENTER);
@@ -897,6 +947,69 @@ public class ClientUI extends JFrame {
         }
     }
     
+    // Send Screenshot
+    private void sendScreenshot(String mode) {
+        // Determine receiver based on mode
+        String receiver = null;
+        if (mode.equals("private")) {
+            String selectedUser = userList.getSelectedValue();
+            if (selectedUser == null) {
+                showError("Please select a recipient!");
+                return;
+            }
+            receiver = selectedUser.split(" \\(")[0];
+            
+            if (receiver.equals(client.getUsername())) {
+                showError("Cannot send screenshot to yourself!");
+                return;
+            }
+        } else if (mode.equals("room")) {
+            if (currentRoom == null) {
+                showError("Please join a room first!");
+                return;
+            }
+            receiver = currentRoom;
+        }
+        
+        // Send screenshot through client
+        client.sendScreenshot(receiver, mode);
+    }
+    
+    // Start Video Call
+    private void startVideoCall() {
+        String selectedUser = userList.getSelectedValue();
+        if (selectedUser == null) {
+            showError("Please select a user to call!");
+            return;
+        }
+        
+        String receiver = selectedUser.split(" \\(")[0];
+        
+        if (receiver.equals(client.getUsername())) {
+            showError("Cannot call yourself!");
+            return;
+        }
+        
+        // Show dialog to choose call type
+        String[] options = {"Video Call", "Audio Call", "Cancel"};
+        int choice = JOptionPane.showOptionDialog(this,
+            "Call " + receiver + ":",
+            "Start Call",
+            JOptionPane.YES_NO_CANCEL_OPTION,
+            JOptionPane.QUESTION_MESSAGE,
+            null,
+            options,
+            options[0]);
+        
+        if (choice == 0) {
+            // Video call
+            client.sendVideoCallRequest(receiver, true, true);
+        } else if (choice == 1) {
+            // Audio only
+            client.sendVideoCallRequest(receiver, false, true);
+        }
+    }
+    
     // Helper methods for styling
     private void styleTextField(JTextField textField) {
         textField.setFont(new Font("Segoe UI", Font.PLAIN, 14));
@@ -977,6 +1090,42 @@ public class ClientUI extends JFrame {
         list.setSelectionForeground(BACKGROUND_COLOR);
         list.setBorder(new EmptyBorder(5, 5, 5, 5));
         return list;
+    }
+    
+    // ==================== NEW FEATURES METHODS ====================
+    
+    /**
+     * Hiển thị reaction nhận được
+     */
+    public void displayReaction(Message msg) {
+        SwingUtilities.invokeLater(() -> {
+            String reactionInfo = String.format("%s reacted %s to message %s", 
+                msg.getSender(), msg.getReactionType(), msg.getMessageId());
+            showInfo(reactionInfo);
+        });
+    }
+    
+    /**
+     * Mở video call window
+     */
+    public void openVideoCallWindow(String otherUser, String callId, boolean videoEnabled, boolean audioEnabled) {
+        SwingUtilities.invokeLater(() -> {
+            // TODO: Implement video call window
+            String callType = videoEnabled ? "Video Call" : "Audio Call";
+            showInfo("Opening " + callType + " with " + otherUser + "...\n" +
+                "Call ID: " + callId + "\n" +
+                "Note: Full video call implementation requires additional libraries.");
+        });
+    }
+    
+    /**
+     * Đóng video call window
+     */
+    public void closeVideoCallWindow() {
+        SwingUtilities.invokeLater(() -> {
+            // TODO: Implement close video call window
+            showInfo("Video call ended.");
+        });
     }
     
     public static void main(String[] args) {

@@ -110,6 +110,30 @@ public class ChatClient {
                 handleFileReceived(msg);
                 break;
                 
+            case SCREENSHOT:
+                handleScreenshotReceived(msg);
+                break;
+                
+            case MESSAGE_REACTION:
+                handleReactionReceived(msg);
+                break;
+                
+            case VIDEO_CALL_REQUEST:
+                handleVideoCallRequest(msg);
+                break;
+                
+            case VIDEO_CALL_ACCEPT:
+                handleVideoCallAccept(msg);
+                break;
+                
+            case VIDEO_CALL_REJECT:
+                handleVideoCallReject(msg);
+                break;
+                
+            case VIDEO_CALL_END:
+                handleVideoCallEnd(msg);
+                break;
+                
             case SUCCESS:
                 ui.showInfo(msg.getContent());
                 break;
@@ -207,15 +231,38 @@ public class ChatClient {
         String displayMsg = "📥 Received file: " + msg.getFileName() + 
             " (" + formatFileSize(msg.getFileSize()) + ") from " + msg.getSender();
         
-        // Ask user if they want to save the file
-        int choice = javax.swing.JOptionPane.showConfirmDialog(
-            null, 
-            displayMsg + "\n\nDo you want to save this file?",
+        // Check if it's an image file
+        boolean isImage = ImagePreviewDialog.isImageFile(msg.getFileName());
+        
+        // Show different options based on file type
+        String[] options;
+        if (isImage) {
+            options = new String[]{"Preview", "Save", "Ignore"};
+        } else {
+            options = new String[]{"Save", "Ignore"};
+        }
+        
+        int choice = javax.swing.JOptionPane.showOptionDialog(
+            null,
+            displayMsg + "\n\nWhat would you like to do?",
             "File Received",
-            javax.swing.JOptionPane.YES_NO_OPTION
+            javax.swing.JOptionPane.DEFAULT_OPTION,
+            javax.swing.JOptionPane.QUESTION_MESSAGE,
+            null,
+            options,
+            options[0]
         );
         
-        if (choice == javax.swing.JOptionPane.YES_OPTION) {
+        // Handle choice
+        if (isImage && choice == 0) {
+            // Preview image
+            ImagePreviewDialog.showImagePreview(
+                (java.awt.Frame) javax.swing.SwingUtilities.getWindowAncestor(ui),
+                msg.getFileName(),
+                msg.getFileData()
+            );
+        } else if ((isImage && choice == 1) || (!isImage && choice == 0)) {
+            // Save file
             javax.swing.JFileChooser fileChooser = new javax.swing.JFileChooser();
             fileChooser.setSelectedFile(new File(msg.getFileName()));
             
@@ -244,8 +291,9 @@ public class ChatClient {
             msgType = Message.MessageType.PRIVATE_MSG;
         }
         
+        String fileIcon = isImage ? "🖼️" : "📁";
         Message displayMessage = new Message(msgType, msg.getSender(),
-            "📁 " + msg.getFileName() + " (" + formatFileSize(msg.getFileSize()) + ")");
+            fileIcon + " " + msg.getFileName() + " (" + formatFileSize(msg.getFileSize()) + ")");
         displayMessage.setReceiver(msg.getReceiver());
         
         if (msgType == Message.MessageType.BROADCAST_MSG) {
@@ -301,5 +349,216 @@ public class ChatClient {
     
     public String getUsername() {
         return username;
+    }
+    
+    // ==================== SCREENSHOT METHODS ====================
+    
+    /**
+     * Capture và gửi screenshot
+     */
+    public void sendScreenshot(String receiver, String mode) {
+        try {
+            // Capture screen with resize to reduce size (max 800x600)
+            byte[] screenshotData = ScreenCaptureUtil.captureAndResize(1280, 720);
+            
+            String timestamp = java.time.LocalDateTime.now()
+                .format(java.time.format.DateTimeFormatter.ofPattern("HHmmss_ddMMyyyy"));
+            String fileName = "screenshot_" + timestamp + ".png";
+            
+            // Create screenshot message
+            Message msg = new Message(Message.MessageType.SCREENSHOT, username, 
+                "📸 Screenshot");
+            msg.setFileName(fileName);
+            msg.setFileData(screenshotData);
+            msg.setFileSize(screenshotData.length);
+            
+            // Set receiver based on mode
+            if (mode.equals("private")) {
+                msg.setReceiver(receiver);
+            } else if (mode.equals("room")) {
+                msg.setReceiver(receiver);
+            }
+            // broadcast mode: receiver is null
+            
+            sendMessage(msg);
+            
+            ui.showInfo("Screenshot sent successfully! (" + formatFileSize(screenshotData.length) + ")");
+            
+        } catch (Exception e) {
+            ui.showError("Error capturing screenshot: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Xử lý screenshot nhận được
+     */
+    private void handleScreenshotReceived(Message msg) {
+        String displayMsg = "📸 Screenshot from " + msg.getSender() + 
+            " (" + formatFileSize(msg.getFileSize()) + ")";
+        
+        // Show notification with preview option
+        int choice = javax.swing.JOptionPane.showConfirmDialog(
+            null, 
+            displayMsg + "\n\nDo you want to view this screenshot?",
+            "Screenshot Received",
+            javax.swing.JOptionPane.YES_NO_OPTION
+        );
+        
+        if (choice == javax.swing.JOptionPane.YES_OPTION) {
+            // Show image preview
+            ImagePreviewDialog.showImagePreview(
+                (java.awt.Frame) javax.swing.SwingUtilities.getWindowAncestor(ui),
+                msg.getFileName(),
+                msg.getFileData()
+            );
+        }
+        
+        // Display in chat
+        Message.MessageType msgType;
+        String receiver = msg.getReceiver();
+        
+        if (receiver == null || receiver.isEmpty()) {
+            msgType = Message.MessageType.BROADCAST_MSG;
+        } else if (receiver.startsWith("#")) {
+            msgType = Message.MessageType.ROOM_MSG;
+        } else {
+            msgType = Message.MessageType.PRIVATE_MSG;
+        }
+        
+        Message displayMessage = new Message(msgType, msg.getSender(),
+            "📸 Screenshot (" + formatFileSize(msg.getFileSize()) + ") [Click to view]");
+        displayMessage.setReceiver(msg.getReceiver());
+        
+        if (msgType == Message.MessageType.BROADCAST_MSG) {
+            ui.displayBroadcastMessage(displayMessage);
+        } else if (msgType == Message.MessageType.PRIVATE_MSG) {
+            ui.displayPrivateMessage(displayMessage);
+        } else {
+            ui.displayRoomMessage(displayMessage);
+        }
+    }
+    
+    // ==================== REACTION METHODS ====================
+    
+    /**
+     * Gửi reaction cho tin nhắn
+     */
+    public void sendReaction(String messageId, String reactionType, String receiver, String mode) {
+        Message msg = new Message(Message.MessageType.MESSAGE_REACTION, username, reactionType);
+        msg.setMessageId(messageId);
+        msg.setReactionType(reactionType);
+        msg.setReceiver(receiver);
+        sendMessage(msg);
+    }
+    
+    /**
+     * Xử lý reaction nhận được
+     */
+    private void handleReactionReceived(Message msg) {
+        ui.displayReaction(msg);
+    }
+    
+    // ==================== VIDEO CALL METHODS ====================
+    
+    /**
+     * Gửi yêu cầu video call
+     */
+    public void sendVideoCallRequest(String receiver, boolean videoEnabled, boolean audioEnabled) {
+        String callId = java.util.UUID.randomUUID().toString();
+        Message msg = new Message(Message.MessageType.VIDEO_CALL_REQUEST, username, 
+            "Video call request");
+        msg.setReceiver(receiver);
+        msg.setCallId(callId);
+        msg.setVideoEnabled(videoEnabled);
+        msg.setAudioEnabled(audioEnabled);
+        sendMessage(msg);
+        
+        ui.showInfo("Calling " + receiver + "...");
+    }
+    
+    /**
+     * Chấp nhận video call
+     */
+    public void acceptVideoCall(String caller, String callId) {
+        Message msg = new Message(Message.MessageType.VIDEO_CALL_ACCEPT, username, 
+            "Call accepted");
+        msg.setReceiver(caller);
+        msg.setCallId(callId);
+        sendMessage(msg);
+    }
+    
+    /**
+     * Từ chối video call
+     */
+    public void rejectVideoCall(String caller, String callId) {
+        Message msg = new Message(Message.MessageType.VIDEO_CALL_REJECT, username, 
+            "Call rejected");
+        msg.setReceiver(caller);
+        msg.setCallId(callId);
+        sendMessage(msg);
+    }
+    
+    /**
+     * Kết thúc video call
+     */
+    public void endVideoCall(String otherUser, String callId) {
+        Message msg = new Message(Message.MessageType.VIDEO_CALL_END, username, 
+            "Call ended");
+        msg.setReceiver(otherUser);
+        msg.setCallId(callId);
+        sendMessage(msg);
+    }
+    
+    /**
+     * Xử lý yêu cầu video call
+     */
+    private void handleVideoCallRequest(Message msg) {
+        String caller = msg.getSender();
+        String callId = msg.getCallId();
+        boolean videoEnabled = msg.isVideoEnabled();
+        boolean audioEnabled = msg.isAudioEnabled();
+        
+        String callType = videoEnabled ? "Video Call" : "Audio Call";
+        
+        int choice = javax.swing.JOptionPane.showConfirmDialog(
+            null,
+            caller + " is calling you (" + callType + ")\n\nDo you want to answer?",
+            "Incoming " + callType,
+            javax.swing.JOptionPane.YES_NO_OPTION
+        );
+        
+        if (choice == javax.swing.JOptionPane.YES_OPTION) {
+            acceptVideoCall(caller, callId);
+            ui.openVideoCallWindow(caller, callId, videoEnabled, audioEnabled);
+        } else {
+            rejectVideoCall(caller, callId);
+        }
+    }
+    
+    /**
+     * Xử lý chấp nhận video call
+     */
+    private void handleVideoCallAccept(Message msg) {
+        String receiver = msg.getSender();
+        String callId = msg.getCallId();
+        ui.showInfo(receiver + " accepted your call!");
+        ui.openVideoCallWindow(receiver, callId, true, true);
+    }
+    
+    /**
+     * Xử lý từ chối video call
+     */
+    private void handleVideoCallReject(Message msg) {
+        String receiver = msg.getSender();
+        ui.showInfo(receiver + " rejected your call.");
+    }
+    
+    /**
+     * Xử lý kết thúc video call
+     */
+    private void handleVideoCallEnd(Message msg) {
+        String sender = msg.getSender();
+        ui.showInfo(sender + " ended the call.");
+        ui.closeVideoCallWindow();
     }
 }

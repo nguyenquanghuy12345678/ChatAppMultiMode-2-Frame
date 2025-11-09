@@ -19,6 +19,14 @@ public class Message implements Serializable {
         ROOM_LIST,       // Danh sách rooms
         CREATE_ROOM,     // Tạo room mới
         FILE_TRANSFER,   // Gửi file/ảnh
+        SCREENSHOT,      // Gửi screenshot
+        MESSAGE_REACTION,// Reaction vào tin nhắn
+        VIDEO_CALL_REQUEST,   // Yêu cầu video call
+        VIDEO_CALL_ACCEPT,    // Chấp nhận video call
+        VIDEO_CALL_REJECT,    // Từ chối video call
+        VIDEO_CALL_END,       // Kết thúc video call
+        VIDEO_FRAME,          // Frame video data
+        AUDIO_FRAME,          // Frame audio data
         SUCCESS,         // Thành công
         ERROR            // Lỗi
     }
@@ -34,6 +42,15 @@ public class Message implements Serializable {
     private String fileName;
     private byte[] fileData;
     private long fileSize;
+    
+    // Reaction fields
+    private String messageId;      // ID của tin nhắn được react
+    private String reactionType;   // Loại reaction (❤️, 👍, 😂, etc.)
+    
+    // Video call fields
+    private String callId;         // ID của cuộc gọi
+    private boolean videoEnabled;  // Bật/tắt video
+    private boolean audioEnabled;  // Bật/tắt audio
     
     public Message(MessageType type, String sender, String content) {
         this.type = type;
@@ -72,6 +89,23 @@ public class Message implements Serializable {
     
     public long getFileSize() { return fileSize; }
     public void setFileSize(long fileSize) { this.fileSize = fileSize; }
+    
+    // Reaction getters and setters
+    public String getMessageId() { return messageId; }
+    public void setMessageId(String messageId) { this.messageId = messageId; }
+    
+    public String getReactionType() { return reactionType; }
+    public void setReactionType(String reactionType) { this.reactionType = reactionType; }
+    
+    // Video call getters and setters
+    public String getCallId() { return callId; }
+    public void setCallId(String callId) { this.callId = callId; }
+    
+    public boolean isVideoEnabled() { return videoEnabled; }
+    public void setVideoEnabled(boolean videoEnabled) { this.videoEnabled = videoEnabled; }
+    
+    public boolean isAudioEnabled() { return audioEnabled; }
+    public void setAudioEnabled(boolean audioEnabled) { this.audioEnabled = audioEnabled; }
     
     @Override
     public String toString() {

@@ -104,6 +104,21 @@ public class ClientHandler extends Thread {
                 handleFileTransfer(msg);
                 break;
                 
+            case SCREENSHOT:
+                handleScreenshot(msg);
+                break;
+                
+            case MESSAGE_REACTION:
+                handleReaction(msg);
+                break;
+                
+            case VIDEO_CALL_REQUEST:
+            case VIDEO_CALL_ACCEPT:
+            case VIDEO_CALL_REJECT:
+            case VIDEO_CALL_END:
+                handleVideoCall(msg);
+                break;
+                
             case CREATE_ROOM:
                 server.createRoom(msg.getContent(), msg.getSender());
                 break;
@@ -150,6 +165,52 @@ public class ClientHandler extends Thread {
             // Private file transfer
             server.sendPrivateMessage(msg);
             server.log(user.getUsername() + " sent file to " + receiver + ": " + msg.getFileName());
+        }
+    }
+    
+    private void handleScreenshot(Message msg) {
+        String receiver = msg.getReceiver();
+        
+        if (receiver == null) {
+            // Broadcast screenshot to all
+            server.broadcastMessage(msg);
+            server.log(user.getUsername() + " sent screenshot to all");
+        } else if (receiver.startsWith("#")) {
+            // Room screenshot
+            server.sendRoomMessage(msg);
+            server.log(user.getUsername() + " sent screenshot to room " + receiver);
+        } else {
+            // Private screenshot
+            server.sendPrivateMessage(msg);
+            server.log(user.getUsername() + " sent screenshot to " + receiver);
+        }
+    }
+    
+    private void handleReaction(Message msg) {
+        String receiver = msg.getReceiver();
+        
+        if (receiver == null) {
+            // Broadcast reaction
+            server.broadcastMessage(msg);
+        } else if (receiver.startsWith("#")) {
+            // Room reaction
+            server.sendRoomMessage(msg);
+        } else {
+            // Private reaction
+            server.sendPrivateMessage(msg);
+        }
+        
+        server.log(user.getUsername() + " reacted " + msg.getReactionType() + 
+            " to message " + msg.getMessageId());
+    }
+    
+    private void handleVideoCall(Message msg) {
+        // Forward video call messages to the receiver
+        String receiver = msg.getReceiver();
+        if (receiver != null) {
+            server.sendPrivateMessage(msg);
+            server.log("Video call message: " + msg.getType() + 
+                " from " + user.getUsername() + " to " + receiver);
         }
     }
     
