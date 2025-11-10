@@ -37,12 +37,24 @@ public class WebcamCapture {
     public void start() {
         if (webcam != null && !webcam.isOpen()) {
             try {
+                // Force close if locked by another instance
+                if (webcam.getLock().isLocked()) {
+                    System.out.println("⚠ Camera is locked, forcing release...");
+                    try {
+                        webcam.close();
+                        Thread.sleep(500); // Wait for release
+                    } catch (Exception ex) {
+                        // Ignore
+                    }
+                }
+                
                 webcam.setViewSize(new Dimension(640, 480));
                 webcam.open();
                 isOpen = true;
                 System.out.println("✓ Webcam started");
             } catch (Exception e) {
                 System.err.println("✗ Error starting webcam: " + e.getMessage());
+                System.err.println("💡 Tip: Close other apps using camera (WebcamTest, Zoom, Skype, etc.)");
                 e.printStackTrace();
             }
         }
@@ -57,6 +69,23 @@ public class WebcamCapture {
             } catch (Exception e) {
                 System.err.println("✗ Error stopping webcam: " + e.getMessage());
                 e.printStackTrace();
+            }
+        }
+    }
+    
+    /**
+     * Force release camera even if locked
+     */
+    public void forceRelease() {
+        if (webcam != null) {
+            try {
+                if (webcam.isOpen()) {
+                    webcam.close();
+                }
+                isOpen = false;
+                System.out.println("✓ Webcam force released");
+            } catch (Exception e) {
+                System.err.println("✗ Error releasing webcam: " + e.getMessage());
             }
         }
     }
