@@ -17,6 +17,15 @@ public class ClientHandler extends Thread {
         this.socket = socket;
         this.server = server;
         this.running = true;
+        
+        // Configure socket to prevent auto-close
+        try {
+            socket.setKeepAlive(true);
+            socket.setSoTimeout(300000); // 5 minutes timeout
+            socket.setTcpNoDelay(true); // Disable Nagle's algorithm for low latency
+        } catch (Exception e) {
+            System.err.println("Error configuring socket: " + e.getMessage());
+        }
     }
     
     @Override
@@ -70,17 +79,35 @@ public class ClientHandler extends Thread {
                     socket.getInetAddress().getHostAddress());
                 
                 // Lắng nghe messages
-                while (running) {
-                    Message msg = (Message) input.readObject();
-                    handleMessage(msg);
+                while (running && !socket.isClosed()) {
+                    try {
+                        Message msg = (Message) input.readObject();
+                        if (msg != null) {
+                            handleMessage(msg);
+                        }
+                    } catch (java.net.SocketTimeoutException e) {
+                        // Timeout is OK - just continue
+                        continue;
+                    } catch (ClassNotFoundException e) {
+                        System.err.println("Unknown message class: " + e.getMessage());
+                        continue;
+                    } catch (IOException e) {
+                        if (running && !socket.isClosed()) {
+                            server.log("IO Error with " + user.getUsername() + ": " + e.getMessage());
+                        }
+                        break;
+                    }
                 }
             }
             
-        } catch (IOException | ClassNotFoundException e) {
+        } catch (IOException e) {
             if (running) {
-                server.log("Lỗi với client " + 
+                server.log("Connection error with " + 
                     (user != null ? user.getUsername() : "unknown") + ": " + e.getMessage());
             }
+        } catch (ClassNotFoundException e) {
+            server.log("Protocol error with " + 
+                (user != null ? user.getUsername() : "unknown"));
         } finally {
             cleanup();
         }

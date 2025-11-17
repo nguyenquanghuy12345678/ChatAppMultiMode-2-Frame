@@ -22,6 +22,8 @@ public class ChatClient {
     // Video call state
     private VideoCallWindow activeCallWindow = null;
     private String currentCallId = null;
+    private volatile boolean isInCall = false;
+    private volatile boolean isCallDialogOpen = false;
     
     public ChatClient() {
         this.connected = false;
@@ -39,6 +41,11 @@ public class ChatClient {
             
             // Kết nối đến server
             socket = new Socket(serverIP, serverPort);
+            
+            // Configure socket to prevent auto-close
+            socket.setKeepAlive(true);
+            socket.setSoTimeout(300000); // 5 minutes timeout
+            socket.setTcpNoDelay(true); // Low latency for video
             
             // Khởi tạo streams
             output = new ObjectOutputStream(socket.getOutputStream());
@@ -76,9 +83,23 @@ public class ChatClient {
             while (connected && socket != null && !socket.isClosed()) {
                 try {
                     Message msg = (Message) input.readObject();
-                    handleMessage(msg);
+                    if (msg != null) {
+                        handleMessage(msg);
+                    }
+                } catch (java.net.SocketTimeoutException e) {
+                    // Timeout is OK - socket is still alive
+                    continue;
                 } catch (ClassNotFoundException e) {
                     System.err.println("Unknown message type: " + e.getMessage());
+                    continue;
+                } catch (java.io.EOFException e) {
+                    System.err.println("Server closed connection");
+                    break;
+                } catch (java.net.SocketException e) {
+                    if (connected) {
+                        System.err.println("Socket error: " + e.getMessage());
+                    }
+                    break;
                 }
             }
         } catch (IOException e) {
@@ -86,7 +107,6 @@ public class ChatClient {
                 System.err.println("Connection lost: " + e.getMessage());
                 javax.swing.SwingUtilities.invokeLater(() -> {
                     ui.showError("Lost connection to server!");
-                    disconnect();
                 });
             }
         } finally {
@@ -335,21 +355,25 @@ public class ChatClient {
     }
     
     public synchronized void sendMessage(Message msg) {
-        if (!connected || output == null) {
+        if (!connected || output == null || socket == null || socket.isClosed()) {
             System.err.println("Cannot send message - not connected");
             return;
         }
+        
         try {
             output.writeObject(msg);
             output.flush();
-        } catch (IOException e) {
-            System.err.println("Error sending message: " + e.getMessage());
+        } catch (java.net.SocketException e) {
+            System.err.println("Socket error sending message: " + e.getMessage());
             if (connected) {
                 connected = false;
                 javax.swing.SwingUtilities.invokeLater(() -> 
-                    ui.showError("Connection lost: " + e.getMessage())
+                    ui.showError("Connection lost - socket closed")
                 );
             }
+        } catch (IOException e) {
+            System.err.println("Error sending message: " + e.getMessage());
+            // Don't disconnect on single send error - might be transient
         }
     }
     
@@ -363,9 +387,9 @@ public class ChatClient {
             } catch (Exception e) {
                 // Ignore
             }
-            activeCallWindow = null;
         }
-        currentCallId = null;
+        
+        cleanupCallState();
         
         try {
             if (output != null) {
@@ -509,12 +533,19 @@ public class ChatClient {
      * Gửi yêu cầu video call
      */
     public void sendVideoCallRequest(String receiver, boolean videoEnabled, boolean audioEnabled) {
-        // Kiểm tra nếu đang trong cuộc gọi khác
-        if (activeCallWindow != null && currentCallId != null) {
+        // Kiểm tra nếu đang trong cuộc gọi hoặc đang có dialog
+        if (isInCall || isCallDialogOpen) {
+            ui.showError("You are already in a call or waiting for response!");
+            return;
+        }
+        
+        if (activeCallWindow != null || currentCallId != null) {
             ui.showError("You are already in a call!");
             return;
         }
         
+        // Mark as calling
+        isInCall = true;
         String callId = java.util.UUID.randomUUID().toString();
         currentCallId = callId;
         
@@ -528,6 +559,21 @@ public class ChatClient {
         
         String callType = videoEnabled ? "video call" : "audio call";
         ui.showInfo("Calling " + receiver + " (" + callType + ")...");
+        
+        // Auto cleanup sau 30s nếu không có response
+        new Thread(() -> {
+            try {
+                Thread.sleep(30000);
+                if (currentCallId != null && currentCallId.equals(callId) && activeCallWindow == null) {
+                    cleanupCallState();
+                    javax.swing.SwingUtilities.invokeLater(() ->
+                        ui.showInfo("Call timeout - no response from " + receiver)
+                    );
+                }
+            } catch (InterruptedException e) {
+                // Ignore
+            }
+        }).start();
     }
     
     /**
@@ -605,18 +651,31 @@ public class ChatClient {
         String receiver = msg.getSender();
         String callId = msg.getCallId();
         
-        // Kiểm tra nếu đang trong cuộc gọi khác
-        if (activeCallWindow != null && currentCallId != null && !currentCallId.equals(callId)) {
-            ui.showInfo("Call session mismatch");
+        // Validate call ID
+        if (currentCallId == null || !currentCallId.equals(callId)) {
+            System.err.println("Call ID mismatch or no active call");
+            cleanupCallState();
+            return;
+        }
+        
+        // Kiểm tra nếu đã có window (shouldn't happen)
+        if (activeCallWindow != null) {
+            System.err.println("Window already exists");
             return;
         }
         
         ui.showInfo(receiver + " accepted your call!");
-        currentCallId = callId;
-        // Chỉ người GỌI mới mở window khi được accept (người nhận đã mở rồi)
-        if (activeCallWindow == null) {
+        
+        // Chỉ người GỌI mới mở window khi được accept
+        try {
             activeCallWindow = new VideoCallWindow(receiver, callId, true, this);
             activeCallWindow.setVisible(true);
+        } catch (Exception e) {
+            System.err.println("Error opening video window: " + e.getMessage());
+            e.printStackTrace();
+            cleanupCallState();
+            endVideoCall(receiver, callId);
+            ui.showError("Failed to start video call: " + e.getMessage());
         }
     }
     
@@ -625,6 +684,7 @@ public class ChatClient {
      */
     private void handleVideoCallReject(Message msg) {
         String receiver = msg.getSender();
+        cleanupCallState();
         ui.showInfo(receiver + " rejected your call.");
     }
     
@@ -636,10 +696,14 @@ public class ChatClient {
         
         // Đóng video call window nếu đang mở
         if (activeCallWindow != null) {
-            activeCallWindow.forceClose();
-            activeCallWindow = null;
+            try {
+                activeCallWindow.forceClose();
+            } catch (Exception e) {
+                System.err.println("Error closing window: " + e.getMessage());
+            }
         }
-        currentCallId = null;
+        
+        cleanupCallState();
         ui.showInfo(sender + " ended the call.");
     }
     
@@ -686,10 +750,19 @@ public class ChatClient {
     }
     
     /**
-     * Cleanup khi đóng call window
+     * Cleanup toàn bộ call state
      */
-    public void cleanupCallWindow() {
+    private void cleanupCallState() {
+        isInCall = false;
+        isCallDialogOpen = false;
         activeCallWindow = null;
         currentCallId = null;
+    }
+    
+    /**
+     * Cleanup khi đóng call window (public cho VideoCallWindow gọi)
+     */
+    public void cleanupCallWindow() {
+        cleanupCallState();
     }
 }

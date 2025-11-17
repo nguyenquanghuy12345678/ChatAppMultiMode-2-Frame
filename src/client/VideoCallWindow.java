@@ -32,7 +32,8 @@ public class VideoCallWindow extends JFrame {
     private Thread streamThread;
     private final Object frameLock = new Object();
     private long lastFrameTime = 0;
-    private static final long MIN_FRAME_INTERVAL = 150; // Giảm xuống ~6-7 FPS để tránh overload
+    private static final long MIN_FRAME_INTERVAL = 200; // 5 FPS để tránh overload socket
+    private int frameSkipCounter = 0;
     
     private String partnerName;
     private String callId;
@@ -155,18 +156,21 @@ public class VideoCallWindow extends JFrame {
                             }
                         });
                         
-                        // Stream tới remote user (throttled)
+                        // Stream tới remote user (throttled heavily)
                         frameCount++;
-                        if (client != null && frameCount % 2 == 0) { // Chỉ gửi mỗi 2 frame
+                        frameSkipCounter++;
+                        if (client != null && frameSkipCounter >= 3) { // Chỉ gửi mỗi 3 frame = ~2 FPS
+                            frameSkipCounter = 0;
                             try {
-                                // Resize trước khi gửi để giảm bandwidth
-                                BufferedImage resized = resizeImage(image, 320, 240);
+                                // Resize nhỏ hơn để giảm bandwidth
+                                BufferedImage resized = resizeImage(image, 240, 180); // Giảm size
                                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
                                 ImageIO.write(resized, "jpg", baos);
                                 byte[] frameData = baos.toByteArray();
+                                baos.close();
                                 
                                 // Kiểm tra kích thước trước khi gửi
-                                if (frameData.length < 100_000) { // Max 100KB
+                                if (frameData.length < 50_000) { // Max 50KB thay vì 100KB
                                     client.sendVideoFrame(partnerName, callId, frameData);
                                 } else {
                                     System.err.println("Frame too large: " + frameData.length + " - skipping");
