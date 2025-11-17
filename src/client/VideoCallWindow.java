@@ -4,6 +4,9 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import javax.imageio.ImageIO;
 
 public class VideoCallWindow extends JFrame {
     private static final long serialVersionUID = 1L;
@@ -25,6 +28,7 @@ public class VideoCallWindow extends JFrame {
     private volatile boolean running = false;
     private volatile boolean cameraEnabled = true;
     private Thread captureThread;
+    private Thread streamThread;
     
     private String partnerName;
     private String callId;
@@ -38,16 +42,34 @@ public class VideoCallWindow extends JFrame {
         this.client = client;
         
         initComponents();
+        
         if (videoEnabled) {
             startCamera();
+        } else {
+            // Audio only mode
+            localVideoLabel.setText("Audio Only Call");
+            remoteVideoLabel.setText("Audio Only Call");
+            localVideoLabel.setFont(new Font("Segoe UI", Font.BOLD, 24));
+            remoteVideoLabel.setFont(new Font("Segoe UI", Font.BOLD, 24));
+            localVideoLabel.setForeground(Color.WHITE);
+            remoteVideoLabel.setForeground(Color.WHITE);
         }
     }
     
     private void initComponents() {
-        setTitle("Video Call - " + partnerName);
+        String windowTitle = isVideoCall ? "Video Call - " + partnerName : "Audio Call - " + partnerName;
+        setTitle(windowTitle);
         setSize(900, 600);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+        
+        // Handle window close event
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent windowEvent) {
+                endCall();
+            }
+        });
         
         JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
         mainPanel.setBackground(BACKGROUND_COLOR);
@@ -82,7 +104,7 @@ public class VideoCallWindow extends JFrame {
     
     private void startCamera() {
         running = true;
-        new Thread(() -> {
+        captureThread = new Thread(() -> {
             try {
                 webcam = new WebcamCapture();
                 if (!webcam.isAvailable()) {
@@ -96,27 +118,80 @@ public class VideoCallWindow extends JFrame {
                 while (running && cameraEnabled) {
                     BufferedImage image = webcam.captureFrame();
                     if (image != null) {
-                        SwingUtilities.invokeLater(() -> localVideoLabel.setIcon(new ImageIcon(image)));
+                        // Hiển thị local
+                        SwingUtilities.invokeLater(() -> {
+                            ImageIcon scaledIcon = new ImageIcon(image.getScaledInstance(
+                                localVideoLabel.getWidth(), localVideoLabel.getHeight(), Image.SCALE_FAST));
+                            localVideoLabel.setIcon(scaledIcon);
+                        });
+                        
+                        // Stream tới remote user
+                        if (client != null) {
+                            try {
+                                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                                ImageIO.write(image, "jpg", baos);
+                                byte[] frameData = baos.toByteArray();
+                                client.sendVideoFrame(partnerName, callId, frameData);
+                            } catch (Exception e) {
+                                // Ignore streaming errors
+                            }
+                        }
                     }
-                    Thread.sleep(33);
+                    Thread.sleep(100); // ~10 FPS for network streaming
                 }
                 webcam.stop();
             } catch (Exception e) {
                 e.printStackTrace();
             }
-        }).start();
+        });
+        captureThread.start();
     }
     
     public void endCall() {
         running = false;
         if (webcam != null) webcam.stop();
-        if (client != null) client.endVideoCall(partnerName, callId);
+        if (captureThread != null) captureThread.interrupt();
+        if (streamThread != null) streamThread.interrupt();
+        if (client != null) {
+            client.endVideoCall(partnerName, callId);
+            client.cleanupCallWindow();
+        }
         dispose();
     }
     
-    public void displayRemoteFrame(BufferedImage image) {
-        if (image != null) {
-            SwingUtilities.invokeLater(() -> remoteVideoLabel.setIcon(new ImageIcon(image)));
+    /**
+     * Force close without sending end message (khi remote đã end)
+     */
+    public void forceClose() {
+        running = false;
+        if (webcam != null) webcam.stop();
+        if (captureThread != null) captureThread.interrupt();
+        if (streamThread != null) streamThread.interrupt();
+        if (client != null) {
+            client.cleanupCallWindow();
+        }
+        dispose();
+    }
+    
+    /**
+     * Hiển thị remote frame từ byte array
+     */
+    public void displayRemoteFrame(byte[] frameData) {
+        if (frameData != null && frameData.length > 0) {
+            try {
+                ByteArrayInputStream bais = new ByteArrayInputStream(frameData);
+                BufferedImage image = ImageIO.read(bais);
+                if (image != null) {
+                    SwingUtilities.invokeLater(() -> {
+                        ImageIcon scaledIcon = new ImageIcon(image.getScaledInstance(
+                            remoteVideoLabel.getWidth(), remoteVideoLabel.getHeight(), Image.SCALE_FAST));
+                        remoteVideoLabel.setIcon(scaledIcon);
+                        remoteVideoLabel.setText(""); // Xóa text "Waiting for video..."
+                    });
+                }
+            } catch (Exception e) {
+                System.err.println("Error displaying remote frame: " + e.getMessage());
+            }
         }
     }
 }

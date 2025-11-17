@@ -119,6 +119,10 @@ public class ClientHandler extends Thread {
                 handleVideoCall(msg);
                 break;
                 
+            case VIDEO_FRAME:
+                handleVideoFrame(msg);
+                break;
+                
             case CREATE_ROOM:
                 server.createRoom(msg.getContent(), msg.getSender());
                 break;
@@ -211,6 +215,17 @@ public class ClientHandler extends Thread {
             server.sendPrivateMessage(msg);
             server.log("Video call message: " + msg.getType() + 
                 " from " + user.getUsername() + " to " + receiver);
+        }
+    }
+    
+    /**
+     * Handle video frames - forward to receiver
+     */
+    private void handleVideoFrame(Message msg) {
+        String receiver = msg.getReceiver();
+        if (receiver != null) {
+            server.sendPrivateMessage(msg);
+            // Don't log every frame to avoid spam
         }
     }
     

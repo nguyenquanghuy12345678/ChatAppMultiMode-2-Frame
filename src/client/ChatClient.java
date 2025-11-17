@@ -19,6 +19,10 @@ public class ChatClient {
     private ClientUI ui;
     private boolean connected;
     
+    // Video call state
+    private VideoCallWindow activeCallWindow = null;
+    private String currentCallId = null;
+    
     public ChatClient() {
         this.connected = false;
     }
@@ -132,6 +136,10 @@ public class ChatClient {
                 
             case VIDEO_CALL_END:
                 handleVideoCallEnd(msg);
+                break;
+                
+            case VIDEO_FRAME:
+                handleVideoFrame(msg);
                 break;
                 
             case SUCCESS:
@@ -464,16 +472,25 @@ public class ChatClient {
      * Gửi yêu cầu video call
      */
     public void sendVideoCallRequest(String receiver, boolean videoEnabled, boolean audioEnabled) {
+        // Kiểm tra nếu đang trong cuộc gọi khác
+        if (activeCallWindow != null && currentCallId != null) {
+            ui.showError("You are already in a call!");
+            return;
+        }
+        
         String callId = java.util.UUID.randomUUID().toString();
+        currentCallId = callId;
+        
         Message msg = new Message(Message.MessageType.VIDEO_CALL_REQUEST, username, 
-            "Video call request");
+            videoEnabled ? "Video call request" : "Audio call request");
         msg.setReceiver(receiver);
         msg.setCallId(callId);
         msg.setVideoEnabled(videoEnabled);
         msg.setAudioEnabled(audioEnabled);
         sendMessage(msg);
         
-        ui.showInfo("Calling " + receiver + "...");
+        String callType = videoEnabled ? "video call" : "audio call";
+        ui.showInfo("Calling " + receiver + " (" + callType + ")...");
     }
     
     /**
@@ -518,6 +535,13 @@ public class ChatClient {
         boolean videoEnabled = msg.isVideoEnabled();
         boolean audioEnabled = msg.isAudioEnabled();
         
+        // Kiểm tra nếu đang trong cuộc gọi khác
+        if (activeCallWindow != null && currentCallId != null) {
+            rejectVideoCall(caller, callId);
+            ui.showInfo("Busy - Already in another call");
+            return;
+        }
+        
         String callType = videoEnabled ? "Video Call" : "Audio Call";
         
         int choice = javax.swing.JOptionPane.showConfirmDialog(
@@ -529,7 +553,9 @@ public class ChatClient {
         
         if (choice == javax.swing.JOptionPane.YES_OPTION) {
             acceptVideoCall(caller, callId);
-            ui.openVideoCallWindow(caller, callId, videoEnabled, audioEnabled);
+            currentCallId = callId;
+            activeCallWindow = new VideoCallWindow(caller, callId, videoEnabled, this);
+            activeCallWindow.setVisible(true);
         } else {
             rejectVideoCall(caller, callId);
         }
@@ -541,8 +567,20 @@ public class ChatClient {
     private void handleVideoCallAccept(Message msg) {
         String receiver = msg.getSender();
         String callId = msg.getCallId();
+        
+        // Kiểm tra nếu đang trong cuộc gọi khác
+        if (activeCallWindow != null && currentCallId != null && !currentCallId.equals(callId)) {
+            ui.showInfo("Call session mismatch");
+            return;
+        }
+        
         ui.showInfo(receiver + " accepted your call!");
-        ui.openVideoCallWindow(receiver, callId, true, true);
+        currentCallId = callId;
+        // Chỉ người GỌI mới mở window khi được accept (người nhận đã mở rồi)
+        if (activeCallWindow == null) {
+            activeCallWindow = new VideoCallWindow(receiver, callId, true, this);
+            activeCallWindow.setVisible(true);
+        }
     }
     
     /**
@@ -558,7 +596,44 @@ public class ChatClient {
      */
     private void handleVideoCallEnd(Message msg) {
         String sender = msg.getSender();
+        
+        // Đóng video call window nếu đang mở
+        if (activeCallWindow != null) {
+            activeCallWindow.forceClose();
+            activeCallWindow = null;
+        }
+        currentCallId = null;
         ui.showInfo(sender + " ended the call.");
-        ui.closeVideoCallWindow();
+    }
+    
+    /**
+     * Xử lý video frame nhận được từ remote
+     */
+    private void handleVideoFrame(Message msg) {
+        if (activeCallWindow != null && msg.getCallId().equals(currentCallId)) {
+            byte[] frameData = msg.getFileData();
+            if (frameData != null) {
+                activeCallWindow.displayRemoteFrame(frameData);
+            }
+        }
+    }
+    
+    /**
+     * Gửi video frame tới remote user
+     */
+    public void sendVideoFrame(String receiver, String callId, byte[] frameData) {
+        Message msg = new Message(Message.MessageType.VIDEO_FRAME, username, "video frame");
+        msg.setReceiver(receiver);
+        msg.setCallId(callId);
+        msg.setFileData(frameData);
+        sendMessage(msg);
+    }
+    
+    /**
+     * Cleanup khi đóng call window
+     */
+    public void cleanupCallWindow() {
+        activeCallWindow = null;
+        currentCallId = null;
     }
 }
