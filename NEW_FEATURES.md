@@ -12,7 +12,7 @@ Cho phép gửi file nhỏ (tối đa 5MB) qua socket cho:
 1. Nhấn nút **📁** bên cạnh ô nhập tin nhắn
 2. Chọn file muốn gửi (tối đa 5MB)
 3. File sẽ được gửi qua socket
-4. Người nhận sẽ thấy thông báo và có thể lưu file
+4. Người nhận sẽ thấy thông báo và có thể lưu file..
 
 ### Kỹ thuật
 ```java
