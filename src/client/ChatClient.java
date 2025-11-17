@@ -73,13 +73,24 @@ public class ChatClient {
     
     private void listenForMessages() {
         try {
-            while (connected) {
-                Message msg = (Message) input.readObject();
-                handleMessage(msg);
+            while (connected && socket != null && !socket.isClosed()) {
+                try {
+                    Message msg = (Message) input.readObject();
+                    handleMessage(msg);
+                } catch (ClassNotFoundException e) {
+                    System.err.println("Unknown message type: " + e.getMessage());
+                }
             }
-        } catch (IOException | ClassNotFoundException e) {
+        } catch (IOException e) {
             if (connected) {
-                ui.showError("Mất kết nối với server!");
+                System.err.println("Connection lost: " + e.getMessage());
+                javax.swing.SwingUtilities.invokeLater(() -> {
+                    ui.showError("Lost connection to server!");
+                    disconnect();
+                });
+            }
+        } finally {
+            if (connected) {
                 disconnect();
             }
         }
@@ -323,31 +334,57 @@ public class ChatClient {
         }
     }
     
-    private void sendMessage(Message msg) {
+    public synchronized void sendMessage(Message msg) {
+        if (!connected || output == null) {
+            System.err.println("Cannot send message - not connected");
+            return;
+        }
         try {
             output.writeObject(msg);
             output.flush();
         } catch (IOException e) {
-            ui.showError("Không thể gửi message: " + e.getMessage());
+            System.err.println("Error sending message: " + e.getMessage());
+            if (connected) {
+                connected = false;
+                javax.swing.SwingUtilities.invokeLater(() -> 
+                    ui.showError("Connection lost: " + e.getMessage())
+                );
+            }
         }
     }
     
     public void disconnect() {
-        try {
-            connected = false;
-            
-            if (output != null) {
-                Message logoutMsg = new Message(Message.MessageType.LOGOUT, username, "");
-                output.writeObject(logoutMsg);
-                output.flush();
-                output.close();
+        connected = false;
+        
+        // Close active call if any
+        if (activeCallWindow != null) {
+            try {
+                activeCallWindow.forceClose();
+            } catch (Exception e) {
+                // Ignore
             }
+            activeCallWindow = null;
+        }
+        currentCallId = null;
+        
+        try {
+            if (output != null) {
+                try {
+                    Message logoutMsg = new Message(Message.MessageType.LOGOUT, username, "");
+                    output.writeObject(logoutMsg);
+                    output.flush();
+                } catch (IOException e) {
+                    // Ignore
+                }
+            }
+        } finally {
+            try { if (output != null) output.close(); } catch (IOException e) { /* ignore */ }
+            try { if (input != null) input.close(); } catch (IOException e) { /* ignore */ }
+            try { if (socket != null) socket.close(); } catch (IOException e) { /* ignore */ }
             
-            if (input != null) input.close();
-            if (socket != null) socket.close();
-            
-        } catch (IOException e) {
-            e.printStackTrace();
+            output = null;
+            input = null;
+            socket = null;
         }
     }
     
@@ -610,11 +647,17 @@ public class ChatClient {
      * Xử lý video frame nhận được từ remote
      */
     private void handleVideoFrame(Message msg) {
-        if (activeCallWindow != null && msg.getCallId().equals(currentCallId)) {
-            byte[] frameData = msg.getFileData();
-            if (frameData != null) {
-                activeCallWindow.displayRemoteFrame(frameData);
+        try {
+            if (activeCallWindow != null && currentCallId != null && 
+                msg.getCallId() != null && msg.getCallId().equals(currentCallId)) {
+                byte[] frameData = msg.getFileData();
+                if (frameData != null && frameData.length > 0) {
+                    activeCallWindow.displayRemoteFrame(frameData);
+                }
             }
+        } catch (Exception e) {
+            System.err.println("Error handling video frame: " + e.getMessage());
+            // Don't crash - just skip this frame
         }
     }
     
@@ -622,11 +665,24 @@ public class ChatClient {
      * Gửi video frame tới remote user
      */
     public void sendVideoFrame(String receiver, String callId, byte[] frameData) {
-        Message msg = new Message(Message.MessageType.VIDEO_FRAME, username, "video frame");
-        msg.setReceiver(receiver);
-        msg.setCallId(callId);
-        msg.setFileData(frameData);
-        sendMessage(msg);
+        if (!connected || receiver == null || callId == null || frameData == null) {
+            return;
+        }
+        try {
+            // Limit frame size to prevent network overload
+            if (frameData.length > 500_000) { // 500KB max
+                System.err.println("Frame too large: " + frameData.length + " bytes - skipping");
+                return;
+            }
+            
+            Message msg = new Message(Message.MessageType.VIDEO_FRAME, username, "video frame");
+            msg.setReceiver(receiver);
+            msg.setCallId(callId);
+            msg.setFileData(frameData);
+            sendMessage(msg);
+        } catch (Exception e) {
+            System.err.println("Error sending video frame: " + e.getMessage());
+        }
     }
     
     /**

@@ -145,12 +145,19 @@ public class ClientHandler extends Thread {
     }
     
     public void sendMessage(Message msg) {
-        try {
-            output.writeObject(msg);
-            output.flush();
-        } catch (IOException e) {
-            String uname = (user != null ? user.getUsername() : "unknown");
-            server.log("Không thể gửi message đến " + uname);
+        if (output == null || socket == null || socket.isClosed()) {
+            return;
+        }
+        
+        synchronized (output) {
+            try {
+                output.writeObject(msg);
+                output.flush();
+            } catch (IOException e) {
+                String uname = (user != null ? user.getUsername() : "unknown");
+                System.err.println("Cannot send message to " + uname + ": " + e.getMessage());
+                // Don't cleanup here - let the main loop handle it
+            }
         }
     }
     
@@ -219,13 +226,24 @@ public class ClientHandler extends Thread {
     }
     
     /**
-     * Handle video frames - forward to receiver
+     * Handle video frames - forward to receiver with rate limiting
      */
     private void handleVideoFrame(Message msg) {
-        String receiver = msg.getReceiver();
-        if (receiver != null) {
-            server.sendPrivateMessage(msg);
-            // Don't log every frame to avoid spam
+        try {
+            String receiver = msg.getReceiver();
+            if (receiver != null && msg.getFileData() != null) {
+                // Check frame size
+                int frameSize = msg.getFileData().length;
+                if (frameSize > 500_000) { // Max 500KB
+                    System.err.println("Frame too large from " + user.getUsername() + 
+                        ": " + frameSize + " bytes");
+                    return;
+                }
+                server.sendPrivateMessage(msg);
+                // Don't log every frame to avoid spam
+            }
+        } catch (Exception e) {
+            System.err.println("Error handling video frame: " + e.getMessage());
         }
     }
     
@@ -234,17 +252,23 @@ public class ClientHandler extends Thread {
     }
     
     public void cleanup() {
+        running = false;
+        
         try {
-            running = false;
             if (user != null) {
                 server.removeClient(this);
                 server.log(user.getUsername() + " đã ngắt kết nối");
             }
-            if (input != null) input.close();
-            if (output != null) output.close();
-            if (socket != null) socket.close();
-        } catch (IOException e) {
-            e.printStackTrace();
+        } catch (Exception e) {
+            System.err.println("Error removing client: " + e.getMessage());
         }
+        
+        try { if (input != null) input.close(); } catch (IOException e) { /* ignore */ }
+        try { if (output != null) output.close(); } catch (IOException e) { /* ignore */ }
+        try { if (socket != null && !socket.isClosed()) socket.close(); } catch (IOException e) { /* ignore */ }
+        
+        input = null;
+        output = null;
+        socket = null;
     }
 }

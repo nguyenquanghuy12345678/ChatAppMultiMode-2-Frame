@@ -27,8 +27,12 @@ public class VideoCallWindow extends JFrame {
     private WebcamCapture webcam;
     private volatile boolean running = false;
     private volatile boolean cameraEnabled = true;
+    private volatile boolean disposed = false;
     private Thread captureThread;
     private Thread streamThread;
+    private final Object frameLock = new Object();
+    private long lastFrameTime = 0;
+    private static final long MIN_FRAME_INTERVAL = 150; // Giảm xuống ~6-7 FPS để tránh overload
     
     private String partnerName;
     private String callId;
@@ -105,8 +109,11 @@ public class VideoCallWindow extends JFrame {
     private void startCamera() {
         running = true;
         captureThread = new Thread(() -> {
+            WebcamCapture localWebcam = null;
             try {
-                webcam = new WebcamCapture();
+                localWebcam = new WebcamCapture();
+                webcam = localWebcam;
+                
                 if (!webcam.isAvailable()) {
                     SwingUtilities.invokeLater(() -> localVideoLabel.setText("No camera"));
                     return;
@@ -114,84 +121,228 @@ public class VideoCallWindow extends JFrame {
                 
                 webcam.start();
                 SwingUtilities.invokeLater(() -> statusLabel.setText("Camera active"));
+                
+                int frameCount = 0;
+                long startTime = System.currentTimeMillis();
 
-                while (running && cameraEnabled) {
-                    BufferedImage image = webcam.captureFrame();
-                    if (image != null) {
-                        // Hiển thị local
+                while (running && cameraEnabled && !disposed) {
+                    try {
+                        BufferedImage image = webcam.captureFrame();
+                        if (image == null) {
+                            Thread.sleep(MIN_FRAME_INTERVAL);
+                            continue;
+                        }
+                        
+                        // Rate limiting - chỉ gửi nếu đủ khoảng thời gian
+                        long currentTime = System.currentTimeMillis();
+                        if (currentTime - lastFrameTime < MIN_FRAME_INTERVAL) {
+                            Thread.sleep(MIN_FRAME_INTERVAL - (currentTime - lastFrameTime));
+                            continue;
+                        }
+                        lastFrameTime = currentTime;
+                        
+                        // Hiển thị local (scale nhẹ để giảm CPU)
+                        final BufferedImage finalImage = image;
                         SwingUtilities.invokeLater(() -> {
-                            ImageIcon scaledIcon = new ImageIcon(image.getScaledInstance(
-                                localVideoLabel.getWidth(), localVideoLabel.getHeight(), Image.SCALE_FAST));
-                            localVideoLabel.setIcon(scaledIcon);
+                            try {
+                                if (localVideoLabel.getWidth() > 0 && localVideoLabel.getHeight() > 0) {
+                                    ImageIcon scaledIcon = new ImageIcon(finalImage.getScaledInstance(
+                                        localVideoLabel.getWidth(), localVideoLabel.getHeight(), Image.SCALE_FAST));
+                                    localVideoLabel.setIcon(scaledIcon);
+                                }
+                            } catch (Exception e) {
+                                // Ignore display errors
+                            }
                         });
                         
-                        // Stream tới remote user
-                        if (client != null) {
+                        // Stream tới remote user (throttled)
+                        frameCount++;
+                        if (client != null && frameCount % 2 == 0) { // Chỉ gửi mỗi 2 frame
                             try {
+                                // Resize trước khi gửi để giảm bandwidth
+                                BufferedImage resized = resizeImage(image, 320, 240);
                                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                                ImageIO.write(image, "jpg", baos);
+                                ImageIO.write(resized, "jpg", baos);
                                 byte[] frameData = baos.toByteArray();
-                                client.sendVideoFrame(partnerName, callId, frameData);
+                                
+                                // Kiểm tra kích thước trước khi gửi
+                                if (frameData.length < 100_000) { // Max 100KB
+                                    client.sendVideoFrame(partnerName, callId, frameData);
+                                } else {
+                                    System.err.println("Frame too large: " + frameData.length + " - skipping");
+                                }
                             } catch (Exception e) {
-                                // Ignore streaming errors
+                                System.err.println("Error streaming frame: " + e.getMessage());
                             }
                         }
+                        
+                        // FPS monitoring
+                        if (frameCount % 30 == 0) {
+                            long elapsed = System.currentTimeMillis() - startTime;
+                            double fps = (frameCount * 1000.0) / elapsed;
+                            System.out.println("Video FPS: " + String.format("%.1f", fps));
+                        }
+                        
+                    } catch (InterruptedException e) {
+                        break;
+                    } catch (Exception e) {
+                        System.err.println("Error in capture loop: " + e.getMessage());
+                        Thread.sleep(500); // Wait before retry
                     }
-                    Thread.sleep(100); // ~10 FPS for network streaming
                 }
-                webcam.stop();
             } catch (Exception e) {
+                System.err.println("Camera error: " + e.getMessage());
                 e.printStackTrace();
+            } finally {
+                if (localWebcam != null) {
+                    try {
+                        localWebcam.stop();
+                    } catch (Exception e) {
+                        System.err.println("Error stopping webcam: " + e.getMessage());
+                    }
+                }
             }
-        });
+        }, "VideoCapture-" + partnerName);
+        captureThread.setDaemon(true);
         captureThread.start();
     }
     
+    /**
+     * Resize image để giảm bandwidth
+     */
+    private BufferedImage resizeImage(BufferedImage original, int width, int height) {
+        BufferedImage resized = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = resized.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        g.drawImage(original, 0, 0, width, height, null);
+        g.dispose();
+        return resized;
+    }
+    
     public void endCall() {
+        if (disposed) return;
+        disposed = true;
         running = false;
-        if (webcam != null) webcam.stop();
-        if (captureThread != null) captureThread.interrupt();
-        if (streamThread != null) streamThread.interrupt();
-        if (client != null) {
-            client.endVideoCall(partnerName, callId);
-            client.cleanupCallWindow();
+        
+        try {
+            if (webcam != null) {
+                webcam.stop();
+            }
+        } catch (Exception e) {
+            System.err.println("Error stopping webcam: " + e.getMessage());
         }
-        dispose();
+        
+        try {
+            if (captureThread != null && captureThread.isAlive()) {
+                captureThread.interrupt();
+                captureThread.join(1000); // Wait max 1s
+            }
+        } catch (Exception e) {
+            // Ignore
+        }
+        
+        try {
+            if (streamThread != null && streamThread.isAlive()) {
+                streamThread.interrupt();
+            }
+        } catch (Exception e) {
+            // Ignore
+        }
+        
+        try {
+            if (client != null) {
+                client.endVideoCall(partnerName, callId);
+                client.cleanupCallWindow();
+            }
+        } catch (Exception e) {
+            System.err.println("Error notifying client: " + e.getMessage());
+        }
+        
+        try {
+            dispose();
+        } catch (Exception e) {
+            // Ignore
+        }
     }
     
     /**
      * Force close without sending end message (khi remote đã end)
      */
     public void forceClose() {
+        if (disposed) return;
+        disposed = true;
         running = false;
-        if (webcam != null) webcam.stop();
-        if (captureThread != null) captureThread.interrupt();
-        if (streamThread != null) streamThread.interrupt();
-        if (client != null) {
-            client.cleanupCallWindow();
+        
+        try {
+            if (webcam != null) {
+                webcam.stop();
+            }
+        } catch (Exception e) {
+            // Ignore
         }
-        dispose();
+        
+        try {
+            if (captureThread != null && captureThread.isAlive()) {
+                captureThread.interrupt();
+                captureThread.join(1000);
+            }
+        } catch (Exception e) {
+            // Ignore
+        }
+        
+        try {
+            if (streamThread != null && streamThread.isAlive()) {
+                streamThread.interrupt();
+            }
+        } catch (Exception e) {
+            // Ignore
+        }
+        
+        try {
+            if (client != null) {
+                client.cleanupCallWindow();
+            }
+        } catch (Exception e) {
+            // Ignore
+        }
+        
+        try {
+            dispose();
+        } catch (Exception e) {
+            // Ignore
+        }
     }
     
     /**
      * Hiển thị remote frame từ byte array
      */
     public void displayRemoteFrame(byte[] frameData) {
-        if (frameData != null && frameData.length > 0) {
-            try {
-                ByteArrayInputStream bais = new ByteArrayInputStream(frameData);
-                BufferedImage image = ImageIO.read(bais);
-                if (image != null) {
-                    SwingUtilities.invokeLater(() -> {
-                        ImageIcon scaledIcon = new ImageIcon(image.getScaledInstance(
-                            remoteVideoLabel.getWidth(), remoteVideoLabel.getHeight(), Image.SCALE_FAST));
-                        remoteVideoLabel.setIcon(scaledIcon);
-                        remoteVideoLabel.setText(""); // Xóa text "Waiting for video..."
-                    });
-                }
-            } catch (Exception e) {
-                System.err.println("Error displaying remote frame: " + e.getMessage());
+        if (disposed || frameData == null || frameData.length == 0) {
+            return;
+        }
+        
+        try {
+            ByteArrayInputStream bais = new ByteArrayInputStream(frameData);
+            BufferedImage image = ImageIO.read(bais);
+            bais.close();
+            
+            if (image != null && !disposed) {
+                SwingUtilities.invokeLater(() -> {
+                    try {
+                        if (!disposed && remoteVideoLabel != null && 
+                            remoteVideoLabel.getWidth() > 0 && remoteVideoLabel.getHeight() > 0) {
+                            ImageIcon scaledIcon = new ImageIcon(image.getScaledInstance(
+                                remoteVideoLabel.getWidth(), remoteVideoLabel.getHeight(), Image.SCALE_FAST));
+                            remoteVideoLabel.setIcon(scaledIcon);
+                            remoteVideoLabel.setText(""); // Xóa text "Waiting for video..."
+                        }
+                    } catch (Exception e) {
+                        // Ignore - window might be closing
+                    }
+                });
             }
+        } catch (Exception e) {
+            System.err.println("Error displaying remote frame: " + e.getMessage());
         }
     }
 }
