@@ -13,10 +13,13 @@ import java.util.concurrent.ConcurrentHashMap;
 public class ChatServer {
     private int port;
     private ServerSocket serverSocket;
-    private Map<String, ClientHandler> clients;  // username -> handler
-    private Map<String, ChatRoom> chatRooms;     // roomName -> room
+    private Map<String, ClientHandler> clients;
+    private Map<String, ChatRoom> chatRooms;
     private boolean running;
     private ServerUI ui;
+    
+    // --- MỚI: Database Manager ---
+    private DatabaseManager dbManager;
     
     public ChatServer(int port) {
         this.port = port;
@@ -24,23 +27,25 @@ public class ChatServer {
         this.chatRooms = new ConcurrentHashMap<>();
         this.running = false;
         
-        // Tạo một số room mặc định (với # prefix)
+        // Khởi tạo Database
+        this.dbManager = new DatabaseManager();
+        
+        // Tạo room mặc định
         chatRooms.put("#General", new ChatRoom("General", "SYSTEM"));
         chatRooms.put("#Gaming", new ChatRoom("Gaming", "SYSTEM"));
-        chatRooms.put("#Study", new ChatRoom("Study", "SYSTEM"));
     }
     
-    public void setUI(ServerUI ui) {
-        this.ui = ui;
-    }
+    public void setUI(ServerUI ui) { this.ui = ui; }
     
+    // Getter cho DB Manager
+    public DatabaseManager getDbManager() { return dbManager; }
+
     public void start() {
         try {
             serverSocket = new ServerSocket(port);
             running = true;
-            log("Server đã khởi động trên port " + port);
+            log("Server started on port " + port);
             
-            // Thread chấp nhận kết nối
             new Thread(() -> {
                 while (running) {
                     try {
@@ -48,36 +53,24 @@ public class ChatServer {
                         ClientHandler handler = new ClientHandler(clientSocket, this);
                         handler.start();
                     } catch (IOException e) {
-                        if (running) {
-                            log("Lỗi khi chấp nhận kết nối: " + e.getMessage());
-                        }
+                        if (running) log("Accept error: " + e.getMessage());
                     }
                 }
             }).start();
             
         } catch (IOException e) {
-            log("Không thể khởi động server: " + e.getMessage());
+            log("Could not start server: " + e.getMessage());
         }
     }
     
     public void stop() {
         try {
             running = false;
-            
-            // Ngắt kết nối tất cả clients
-            for (ClientHandler handler : clients.values()) {
-                handler.cleanup();
-            }
+            for (ClientHandler handler : clients.values()) handler.cleanup();
             clients.clear();
-            
-            if (serverSocket != null && !serverSocket.isClosed()) {
-                serverSocket.close();
-            }
-            
-            log("Server đã dừng");
-        } catch (IOException e) {
-            log("Lỗi khi dừng server: " + e.getMessage());
-        }
+            if (serverSocket != null) serverSocket.close();
+            log("Server stopped");
+        } catch (IOException e) { log("Stop error: " + e.getMessage()); }
     }
     
     public synchronized void addClient(ClientHandler handler) {
@@ -88,14 +81,9 @@ public class ChatServer {
     public synchronized void removeClient(ClientHandler handler) {
         if (handler.getUser() != null) {
             String username = handler.getUser().getUsername();
-            
-            // Rời khỏi tất cả rooms
             for (ChatRoom room : chatRooms.values()) {
-                if (room.isMember(username)) {
-                    room.removeMember(username);
-                }
+                if (room.isMember(username)) room.removeMember(username);
             }
-            
             clients.remove(username);
             broadcastUserList();
             broadcastRoomList(null);
@@ -109,9 +97,7 @@ public class ChatServer {
     
     public List<User> getOnlineUsers() {
         List<User> users = new ArrayList<>();
-        for (ClientHandler handler : clients.values()) {
-            users.add(handler.getUser());
-        }
+        for (ClientHandler handler : clients.values()) users.add(handler.getUser());
         return users;
     }
     
@@ -119,153 +105,108 @@ public class ChatServer {
         return new ArrayList<>(chatRooms.values());
     }
     
+    // --- CÁC HÀM GỬI TIN ---
+    
     public void broadcastUserList() {
         Message msg = new Message(Message.MessageType.USER_LIST, "SERVER", "");
         msg.setData(getOnlineUsers());
-        
-        for (ClientHandler handler : clients.values()) {
-            handler.sendMessage(msg);
-        }
+        for (ClientHandler handler : clients.values()) handler.sendMessage(msg);
     }
     
     public void sendPrivateMessage(Message msg) {
         ClientHandler receiver = clients.get(msg.getReceiver());
         ClientHandler sender = clients.get(msg.getSender());
-        
         if (receiver != null) {
             receiver.sendMessage(msg);
-            // Echo lại cho người gửi
-            if (sender != null) {
+            // Echo lại cho sender (trừ file/screenshot để tránh double)
+            if (sender != null && 
+                msg.getType() != Message.MessageType.FILE_TRANSFER && 
+                msg.getType() != Message.MessageType.SCREENSHOT) {
                 sender.sendMessage(msg);
-            }
-            log("Private: " + msg.getSender() + " -> " + msg.getReceiver() + ": " + msg.getContent());
-        } else {
-            if (sender != null) {
-                Message error = new Message(Message.MessageType.ERROR, "SERVER", 
-                    "Người dùng " + msg.getReceiver() + " không online");
-                sender.sendMessage(error);
             }
         }
     }
     
     public void sendRoomMessage(Message msg) {
-        String roomName = msg.getReceiver();
-        ChatRoom room = chatRooms.get(roomName);
-        
+        ChatRoom room = chatRooms.get(msg.getReceiver());
         if (room != null) {
             for (String member : room.getMembers()) {
-                ClientHandler handler = clients.get(member);
-                if (handler != null) {
-                    handler.sendMessage(msg);
-                }
+                ClientHandler h = clients.get(member);
+                if (h != null) h.sendMessage(msg);
             }
-            log("Room [" + roomName + "]: " + msg.getSender() + ": " + msg.getContent());
         }
     }
     
     public void broadcastMessage(Message msg) {
-        for (ClientHandler handler : clients.values()) {
-            handler.sendMessage(msg);
-        }
-        log("Broadcast: " + msg.getSender() + ": " + msg.getContent());
+        for (ClientHandler handler : clients.values()) handler.sendMessage(msg);
     }
     
     public void createRoom(String roomName, String creator) {
         String normalized = roomName == null ? "" : roomName.trim();
-        if (normalized.isEmpty()) {
-            ClientHandler creatorHandler = clients.get(creator);
-            if (creatorHandler != null) {
-                creatorHandler.sendMessage(new Message(Message.MessageType.ERROR, "SERVER",
-                        "Tên phòng không hợp lệ"));
-            }
-            return;
-        }
-
-        // Ensure room name has # prefix
+        if (normalized.isEmpty()) return;
         String fullRoomName = normalized.startsWith("#") ? normalized : "#" + normalized;
 
         if (!chatRooms.containsKey(fullRoomName)) {
             ChatRoom room = new ChatRoom(normalized, creator);
             chatRooms.put(fullRoomName, room);
-
-            broadcastRoomList("Room mới: " + fullRoomName);
-
-            log("Room mới được tạo: " + fullRoomName + " bởi " + creator);
+            broadcastRoomList("New room: " + fullRoomName);
             updateUI();
-        } else {
-            ClientHandler creatorHandler = clients.get(creator);
-            if (creatorHandler != null) {
-                creatorHandler.sendMessage(new Message(Message.MessageType.ERROR, "SERVER",
-                        "Room đã tồn tại"));
-            }
         }
     }
     
     public void joinRoom(String roomName, String username) {
-        // Ensure room name has # prefix
-        String fullRoomName = roomName.startsWith("#") ? roomName : "#" + roomName;
-        
-        ChatRoom room = chatRooms.get(fullRoomName);
+        ChatRoom room = chatRooms.get(roomName);
         ClientHandler handler = clients.get(username);
-        
         if (room != null && handler != null) {
-            if (room.addMember(username)) {
-                handler.getUser().setCurrentRoom(fullRoomName);
-                
-                Message success = new Message(Message.MessageType.SUCCESS, "SERVER", 
-                    "Đã tham gia room: " + fullRoomName);
-                handler.sendMessage(success);
-                
-                // Thông báo cho các thành viên khác
-                Message notification = new Message(Message.MessageType.ROOM_MSG, "SERVER", 
-                    username + " đã tham gia room");
-                notification.setReceiver(fullRoomName);
-                sendRoomMessage(notification);
-                
-                log(username + " đã tham gia room: " + fullRoomName);
-                broadcastRoomList(null);
-                updateUI();
-            } else {
-                Message error = new Message(Message.MessageType.ERROR, "SERVER",
-                        "Room đã đầy hoặc không thể tham gia");
-                handler.sendMessage(error);
-            }
-        }
-    }
-    
-    public void leaveRoom(String roomName, String username) {
-        // Ensure room name has # prefix
-        String fullRoomName = roomName.startsWith("#") ? roomName : "#" + roomName;
-        
-        ChatRoom room = chatRooms.get(fullRoomName);
-        ClientHandler handler = clients.get(username);
-        
-        if (room != null && handler != null) {
-            room.removeMember(username);
-            handler.getUser().setCurrentRoom(null);
-            
-            Message success = new Message(Message.MessageType.SUCCESS, "SERVER", 
-                "Đã rời room: " + fullRoomName);
-            handler.sendMessage(success);
-            
-            // Thông báo cho các thành viên khác
-            Message notification = new Message(Message.MessageType.ROOM_MSG, "SERVER", 
-                username + " đã rời room");
-            notification.setReceiver(fullRoomName);
-            sendRoomMessage(notification);
-            
-            log(username + " đã rời room: " + fullRoomName);
-            broadcastRoomList(null);
+            room.addMember(username);
+            handler.getUser().setCurrentRoom(roomName);
+            handler.sendMessage(new Message(Message.MessageType.SUCCESS, "SERVER", "Joined " + roomName));
             updateUI();
         }
     }
     
+    public void leaveRoom(String roomName, String username) {
+        ChatRoom room = chatRooms.get(roomName);
+        ClientHandler handler = clients.get(username);
+        if (room != null && handler != null) {
+            room.removeMember(username);
+            handler.getUser().setCurrentRoom(null);
+            handler.sendMessage(new Message(Message.MessageType.SUCCESS, "SERVER", "Left " + roomName));
+            updateUI();
+        }
+    }
+    
+    private void broadcastRoomList(String info) {
+        Message msg = new Message(Message.MessageType.ROOM_LIST, "SERVER", info == null ? "" : info);
+        msg.setData(getRoomList());
+        for (ClientHandler handler : clients.values()) handler.sendMessage(msg);
+    }
+    
+    public synchronized boolean kickClient(String username) {
+        ClientHandler h = clients.get(username);
+        if (h != null) {
+            h.sendMessage(new Message(Message.MessageType.ERROR, "SERVER", "You were kicked."));
+            h.cleanup();
+            return true;
+        }
+        return false;
+    }
+
+    public synchronized boolean deleteRoom(String roomName) {
+        ChatRoom r = chatRooms.get(roomName);
+        if (r != null && r.getMembers().isEmpty()) {
+            chatRooms.remove(roomName);
+            broadcastRoomList("Deleted room: " + roomName);
+            updateUI();
+            return true;
+        }
+        return false;
+    }
+
     public void log(String message) {
         String logMsg = "[" + new Date() + "] " + message;
         System.out.println(logMsg);
-        if (ui != null) {
-            ui.appendLog(logMsg);
-        }
+        if (ui != null) ui.appendLog(logMsg);
     }
     
     private void updateUI() {
@@ -275,46 +216,7 @@ public class ChatServer {
             ui.updateRoomList(getRoomList());
         }
     }
-
-    private void broadcastRoomList(String info) {
-        Message msg = new Message(Message.MessageType.ROOM_LIST, "SERVER",
-                info == null ? "" : info);
-        msg.setData(getRoomList());
-        for (ClientHandler handler : clients.values()) {
-            handler.sendMessage(msg);
-        }
-    }
-
-    public synchronized boolean kickClient(String username) {
-        ClientHandler handler = clients.get(username);
-        if (handler != null) {
-            handler.sendMessage(new Message(Message.MessageType.ERROR, "SERVER",
-                    "Bạn đã bị ngắt kết nối bởi quản trị viên"));
-            handler.cleanup();
-            log("Đã kick: " + username);
-            return true;
-        }
-        return false;
-    }
-
-    public synchronized boolean deleteRoom(String roomName) {
-        ChatRoom room = chatRooms.get(roomName);
-        if (room == null) return false;
-        if (!room.getMembers().isEmpty()) {
-            return false; // chỉ cho phép xóa khi phòng trống
-        }
-        chatRooms.remove(roomName);
-        broadcastRoomList("Đã xóa room: " + roomName);
-        log("Đã xóa room: " + roomName);
-        updateUI();
-        return true;
-    }
     
-    public boolean isRunning() {
-        return running;
-    }
-    
-    public int getPort() {
-        return port;
-    }
+    public boolean isRunning() { return running; }
+    public int getPort() { return port; }
 }

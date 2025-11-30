@@ -8,8 +8,13 @@ import common.IconManager;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import java.awt.*;
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.List;
 
 public class ClientUI extends JFrame {
@@ -26,48 +31,39 @@ public class ClientUI extends JFrame {
 
     private ChatClient client;
 
-    // Card layout
+    // Layout
     private JPanel mainContainer;
     private CardLayout cardLayout;
 
-    // Login components
+    // Components
     private JPanel loginPanel;
-    private JTextField serverIPField;
-    private JTextField serverPortField;
-    private JTextField usernameField;
+    private JTextField serverIPField, serverPortField, usernameField;
     private JButton connectButton;
 
-    // Chat components
     private JPanel chatPanel;
     private JTabbedPane chatTabs;
 
-    // Broadcast tab
+    // Broadcast
     private EmojiTextPane broadcastArea;
     private JTextField broadcastInput;
-    private JButton broadcastSendButton;
-    private JButton broadcastEmojiButton;
-    private JButton broadcastFileButton;
+    private JButton broadcastEmojiButton, broadcastFileButton, broadcastSendButton;
 
-    // Private chat tab
+    // Private
     private EmojiTextPane privateArea;
     private JTextField privateInput;
-    private JButton privateSendButton;
-    private JButton privateEmojiButton;
-    private JButton privateFileButton;
+    private JButton privateEmojiButton, privateFileButton, privateSendButton;
     private JList<String> userList;
     private DefaultListModel<String> userListModel;
+    private JTextField userSearchField;
+    private List<User> allUsers = new ArrayList<>();
 
-    // Room chat tab
+    // Room
     private EmojiTextPane roomArea;
     private JTextField roomInput;
-    private JButton roomSendButton;
-    private JButton roomEmojiButton;
-    private JButton roomFileButton;
+    private JButton roomEmojiButton, roomFileButton, roomSendButton;
     private JList<String> roomList;
     private DefaultListModel<String> roomListModel;
-    private JButton joinRoomButton;
-    private JButton leaveRoomButton;
-    private JButton createRoomButton;
+    private JButton joinRoomButton, leaveRoomButton, createRoomButton;
     private String currentRoom = null;
 
     // Status
@@ -81,36 +77,29 @@ public class ClientUI extends JFrame {
     }
 
     private void initComponents() {
-        // Set Look and Feel first
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        } catch (Exception e) { e.printStackTrace(); }
 
         setTitle("Chat Client");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(1000, 700);
+        setSize(1050, 750); // Tăng kích thước cửa sổ một chút
         setLocationRelativeTo(null);
 
-        // Main container with CardLayout
         cardLayout = new CardLayout();
         mainContainer = new JPanel(cardLayout);
 
-        // Login panel
         loginPanel = createLoginPanel();
         mainContainer.add(loginPanel, "LOGIN");
 
-        // Chat panel
         chatPanel = createChatPanel();
         mainContainer.add(chatPanel, "CHAT");
 
         add(mainContainer);
-
-        // Show login panel first
         showLoginPanel();
     }
 
+    // --- LOGIN PANEL ---
     private JPanel createLoginPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
         panel.setBackground(BACKGROUND_COLOR);
@@ -118,205 +107,183 @@ public class ClientUI extends JFrame {
         JPanel formPanel = new JPanel(new GridBagLayout());
         formPanel.setBackground(PANEL_COLOR);
         formPanel.setBorder(BorderFactory.createCompoundBorder(
-                new LineBorder(ACCENT_COLOR, 3, true),
+                new LineBorder(ACCENT_COLOR, 2, true),
                 new EmptyBorder(40, 50, 40, 50)));
 
-        GridBagConstraints gbcTitle = new GridBagConstraints();
-        gbcTitle.insets = new Insets(0, 0, 30, 0);
-        gbcTitle.fill = GridBagConstraints.HORIZONTAL;
-        gbcTitle.gridx = 0;
-        gbcTitle.gridy = 0;
-        gbcTitle.gridwidth = 2;
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(10, 10, 10, 10);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
 
-        // Title with icon
-        JLabel titleLabel = new JLabel("Chat Application");
+        JLabel titleLabel = new JLabel("CHAT APP");
         titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 32));
         titleLabel.setForeground(ACCENT_COLOR);
         titleLabel.setHorizontalAlignment(JLabel.CENTER);
-        formPanel.add(titleLabel, gbcTitle);
+        gbc.gridx = 0; gbc.gridy = 0; gbc.gridwidth = 2;
+        formPanel.add(titleLabel, gbc);
 
-        GridBagConstraints gbcIpLabel = new GridBagConstraints();
-        gbcIpLabel.insets = new Insets(10, 10, 10, 10);
-        gbcIpLabel.fill = GridBagConstraints.HORIZONTAL;
-        gbcIpLabel.gridx = 0;
-        gbcIpLabel.gridy = 1;
-
-        // Server IP
-        JLabel ipLabel = new JLabel("Server IP:");
-        ipLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
-        ipLabel.setForeground(TEXT_COLOR);
-        formPanel.add(ipLabel, gbcIpLabel);
-
-        GridBagConstraints gbcIpField = new GridBagConstraints();
-        gbcIpField.insets = new Insets(10, 10, 10, 10);
-        gbcIpField.fill = GridBagConstraints.HORIZONTAL;
-        gbcIpField.gridx = 1;
-        gbcIpField.gridy = 1;
-
+        // IP
+        gbc.gridwidth = 1; gbc.gridy = 1;
+        JLabel ipLabel = new JLabel("IP Address:"); 
+        ipLabel.setForeground(TEXT_COLOR); ipLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        formPanel.add(ipLabel, gbc);
+        
+        gbc.gridx = 1;
         serverIPField = new JTextField("localhost", 20);
         styleTextField(serverIPField);
-        formPanel.add(serverIPField, gbcIpField);
+        formPanel.add(serverIPField, gbc);
 
-        GridBagConstraints gbcPortLabel = new GridBagConstraints();
-        gbcPortLabel.insets = new Insets(10, 10, 10, 10);
-        gbcPortLabel.fill = GridBagConstraints.HORIZONTAL;
-        gbcPortLabel.gridx = 0;
-        gbcPortLabel.gridy = 2;
-
-        // Server Port
-        JLabel portLabel = new JLabel("Server Port:");
-        portLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
-        portLabel.setForeground(TEXT_COLOR);
-        formPanel.add(portLabel, gbcPortLabel);
-
-        GridBagConstraints gbcPortField = new GridBagConstraints();
-        gbcPortField.insets = new Insets(10, 10, 10, 10);
-        gbcPortField.fill = GridBagConstraints.HORIZONTAL;
-        gbcPortField.gridx = 1;
-        gbcPortField.gridy = 2;
-
+        // Port
+        gbc.gridx = 0; gbc.gridy = 2;
+        JLabel portLabel = new JLabel("Port:"); 
+        portLabel.setForeground(TEXT_COLOR); portLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        formPanel.add(portLabel, gbc);
+        
+        gbc.gridx = 1;
         serverPortField = new JTextField("12345", 20);
         styleTextField(serverPortField);
-        formPanel.add(serverPortField, gbcPortField);
-
-        GridBagConstraints gbcUserLabel = new GridBagConstraints();
-        gbcUserLabel.insets = new Insets(10, 10, 10, 10);
-        gbcUserLabel.fill = GridBagConstraints.HORIZONTAL;
-        gbcUserLabel.gridx = 0;
-        gbcUserLabel.gridy = 3;
+        formPanel.add(serverPortField, gbc);
 
         // Username
-        JLabel userLabel = new JLabel("Username:");
-        userLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
-        userLabel.setForeground(TEXT_COLOR);
-        formPanel.add(userLabel, gbcUserLabel);
-
-        GridBagConstraints gbcUserField = new GridBagConstraints();
-        gbcUserField.insets = new Insets(10, 10, 10, 10);
-        gbcUserField.fill = GridBagConstraints.HORIZONTAL;
-        gbcUserField.gridx = 1;
-        gbcUserField.gridy = 3;
-
+        gbc.gridx = 0; gbc.gridy = 3;
+        JLabel userLabel = new JLabel("Username:"); 
+        userLabel.setForeground(TEXT_COLOR); userLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        formPanel.add(userLabel, gbc);
+        
+        gbc.gridx = 1;
         usernameField = new JTextField(20);
         styleTextField(usernameField);
-        formPanel.add(usernameField, gbcUserField);
+        formPanel.add(usernameField, gbc);
 
-        GridBagConstraints gbcConnectBtn = new GridBagConstraints();
-        gbcConnectBtn.insets = new Insets(20, 10, 10, 10);
-        gbcConnectBtn.fill = GridBagConstraints.HORIZONTAL;
-        gbcConnectBtn.gridx = 0;
-        gbcConnectBtn.gridy = 4;
-        gbcConnectBtn.gridwidth = 2;
+        // Password
+        gbc.gridx = 0; gbc.gridy = 4;
+        JLabel passLabel = new JLabel("Password:"); 
+        passLabel.setForeground(TEXT_COLOR); passLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        formPanel.add(passLabel, gbc);
+        
+        gbc.gridx = 1;
+        JPasswordField passwordField = new JPasswordField(20);
+        passwordField.setBackground(BACKGROUND_COLOR);
+        passwordField.setForeground(TEXT_COLOR);
+        passwordField.setCaretColor(ACCENT_COLOR);
+        passwordField.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        passwordField.setBorder(BorderFactory.createCompoundBorder(
+                new LineBorder(BORDER_COLOR, 1), new EmptyBorder(8, 12, 8, 12)));
+        formPanel.add(passwordField, gbc);
 
-        // Connect button
-        connectButton = createStyledButton("Connect to Server", SUCCESS_COLOR);
-        connectButton.setFont(new Font("Segoe UI", Font.BOLD, 16));
-        connectButton.addActionListener(e -> handleConnect());
-        formPanel.add(connectButton, gbcConnectBtn);
+        // Buttons
+        JPanel btnPanel = new JPanel(new GridLayout(1, 2, 15, 0));
+        btnPanel.setBackground(PANEL_COLOR);
+
+        connectButton = createStyledButton("Login", SUCCESS_COLOR);
+        connectButton.addActionListener(e -> {
+            String pass = new String(passwordField.getPassword());
+            handleConnect(pass);
+        });
+
+        JButton registerButton = createStyledButton("Register", new Color(52, 152, 219));
+        registerButton.addActionListener(e -> {
+            String ip = serverIPField.getText().trim();
+            try {
+                int port = Integer.parseInt(serverPortField.getText().trim());
+                String user = usernameField.getText().trim();
+                String pass = new String(passwordField.getPassword());
+                if(user.isEmpty() || pass.isEmpty()) showError("Please enter username and password!");
+                else client.register(ip, port, user, pass);
+            } catch (Exception ex) { showError("Invalid Port!"); }
+        });
+
+        btnPanel.add(connectButton);
+        btnPanel.add(registerButton);
+
+        gbc.gridx = 0; gbc.gridy = 5; gbc.gridwidth = 2;
+        formPanel.add(btnPanel, gbc);
 
         panel.add(formPanel);
         return panel;
     }
 
+    private void handleConnect(String password) {
+        String serverIP = serverIPField.getText().trim();
+        String portStr = serverPortField.getText().trim();
+        String username = usernameField.getText().trim();
+
+        if (serverIP.isEmpty() || portStr.isEmpty() || username.isEmpty()) {
+            showError("Please fill in all fields!");
+            return;
+        }
+
+        try {
+            int port = Integer.parseInt(portStr);
+            if (client.connect(serverIP, port, username, password)) {
+                showChatPanel();
+                setTitle("Chat Client - " + username);
+                usernameLabel.setText(username);
+                statusLabel.setText("CONNECTED");
+            }
+        } catch (NumberFormatException e) {
+            showError("Invalid port number!");
+        }
+    }
+
+    // --- CHAT PANEL ---
     private JPanel createChatPanel() {
         JPanel panel = new JPanel(new BorderLayout(15, 15));
         panel.setBackground(BACKGROUND_COLOR);
-        panel.setBorder(new EmptyBorder(15, 15, 15, 15));
+        panel.setBorder(new EmptyBorder(10, 10, 10, 10));
 
-        // Top panel - Status bar
+        // Header
         JPanel topPanel = new JPanel(new BorderLayout(15, 0));
         topPanel.setBackground(PANEL_COLOR);
-        topPanel.setBorder(BorderFactory.createCompoundBorder(
-                new LineBorder(BORDER_COLOR, 2, true),
-                new EmptyBorder(10, 15, 10, 15)));
+        topPanel.setBorder(new EmptyBorder(10, 15, 10, 15));
 
-        // Left side - Status and username
         JPanel statusPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 15, 0));
         statusPanel.setBackground(PANEL_COLOR);
-
         statusLabel = new JLabel("CONNECTED");
         statusLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
         statusLabel.setForeground(SUCCESS_COLOR);
-        statusPanel.add(statusLabel);
-
+        
         usernameLabel = new JLabel("User");
         usernameLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
         usernameLabel.setForeground(ACCENT_COLOR);
+        
+        statusPanel.add(statusLabel);
+        statusPanel.add(new JLabel(" | "));
         statusPanel.add(usernameLabel);
-
+        
         topPanel.add(statusPanel, BorderLayout.WEST);
 
-        // Right side - Disconnect button
         JButton disconnectButton = createStyledButton("Disconnect", ERROR_COLOR);
+        disconnectButton.setPreferredSize(new Dimension(120, 35));
         disconnectButton.addActionListener(e -> handleDisconnect());
         topPanel.add(disconnectButton, BorderLayout.EAST);
 
         panel.add(topPanel, BorderLayout.NORTH);
 
-        // Center - Tabs
+        // Tabs
         chatTabs = new JTabbedPane();
-        chatTabs.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        chatTabs.setBackground(PANEL_COLOR);
-        chatTabs.setForeground(TEXT_COLOR);
-        chatTabs.setOpaque(true);
-
-        // Custom tab styling
-        chatTabs.setUI(new javax.swing.plaf.basic.BasicTabbedPaneUI() {
-            @Override
-            protected void paintTabBackground(Graphics g, int tabPlacement, int tabIndex,
-                    int x, int y, int w, int h, boolean isSelected) {
-                Graphics2D g2d = (Graphics2D) g;
-                g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-                if (isSelected) {
-                    g2d.setColor(ACCENT_COLOR);
-                } else {
-                    g2d.setColor(PANEL_COLOR);
-                }
-                g2d.fillRoundRect(x, y, w, h, 8, 8);
-            }
-
-            @Override
-            protected void paintText(Graphics g, int tabPlacement, Font font, FontMetrics metrics,
-                    int tabIndex, String title, Rectangle textRect, boolean isSelected) {
-                g.setFont(font);
-                g.setColor(isSelected ? BACKGROUND_COLOR : TEXT_COLOR);
-                g.drawString(title, textRect.x, textRect.y + metrics.getAscent());
-            }
-
-            @Override
-            protected void paintContentBorder(Graphics g, int tabPlacement, int selectedIndex) {
-                // No border around content
-            }
-        });
-
-        // Broadcast tab
-        chatTabs.addTab("Broadcast (All)", createBroadcastTab());
-
-        // Private chat tab
-        chatTabs.addTab("Private Chat (1-1)", createPrivateTab());
-
-        // Room chat tab
-        chatTabs.addTab("Room Chat", createRoomTab());
+        chatTabs.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        // Loại bỏ phần setUI phức tạp để tránh lỗi hiển thị
+        chatTabs.setBackground(Color.WHITE); 
+        
+        chatTabs.addTab("Broadcast", createBroadcastTab());
+        chatTabs.addTab("Private Chat", createPrivateTab());
+        chatTabs.addTab("Rooms", createRoomTab());
 
         panel.add(chatTabs, BorderLayout.CENTER);
-
         return panel;
     }
 
+    // --- TAB CREATION HELPERS ---
+    
+    // 1. Broadcast Tab
     private JPanel createBroadcastTab() {
         JPanel panel = new JPanel(new BorderLayout(10, 10));
         panel.setBackground(BACKGROUND_COLOR);
-        panel.setBorder(new EmptyBorder(15, 15, 15, 15));
+        panel.setBorder(new EmptyBorder(10, 10, 10, 10));
 
-        // Chat area with emoji support
         broadcastArea = createStyledEmojiPane();
-        JScrollPane scrollPane = new JScrollPane(broadcastArea);
-        scrollPane.setBorder(new LineBorder(BORDER_COLOR, 2));
-        scrollPane.getViewport().setBackground(PANEL_COLOR);
-        panel.add(scrollPane, BorderLayout.CENTER);
+        panel.add(createStyledScrollPane(broadcastArea), BorderLayout.CENTER);
 
-        // Input panel
         JPanel inputPanel = new JPanel(new BorderLayout(10, 0));
         inputPanel.setBackground(BACKGROUND_COLOR);
 
@@ -324,85 +291,91 @@ public class ClientUI extends JFrame {
         styleTextField(broadcastInput);
         broadcastInput.addActionListener(e -> sendBroadcastMessage());
 
-        // Button panel
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
-        buttonPanel.setBackground(BACKGROUND_COLOR);
-
-        broadcastEmojiButton = createStyledButton("", new Color(241, 196, 15));
+        JPanel btnPanel = createButtonPanel();
+        
+        // Setup Buttons for Broadcast
+        broadcastEmojiButton = createStyledButton("😊", new Color(241, 196, 15));
         broadcastEmojiButton.setPreferredSize(new Dimension(50, 40));
-        ImageIcon emojiIcon1 = IconManager.loadIcon("emoji_smile.png", 24);
-        if (emojiIcon1 != null) {
-            broadcastEmojiButton.setIcon(emojiIcon1);
-        } else {
-            broadcastEmojiButton.setText("😊");
-        }
-        broadcastEmojiButton.setToolTipText("Insert Emoji");
         broadcastEmojiButton.addActionListener(e -> showEmojiPicker(broadcastInput));
-
+        
         broadcastFileButton = createStyledButton("File", new Color(155, 89, 182));
-        broadcastFileButton.setPreferredSize(new Dimension(60, 40));
-        broadcastFileButton.setFont(new Font("Segoe UI", Font.BOLD, 11));
-        broadcastFileButton.setToolTipText("Send File");
+        broadcastFileButton.setPreferredSize(new Dimension(80, 40)); // Tăng độ rộng
         broadcastFileButton.addActionListener(e -> sendFile("broadcast"));
-
-        JButton broadcastScreenshotButton = createStyledButton("Screen", new Color(46, 204, 113));
-        broadcastScreenshotButton.setPreferredSize(new Dimension(70, 40));
-        broadcastScreenshotButton.setFont(new Font("Segoe UI", Font.BOLD, 11));
-        broadcastScreenshotButton.setToolTipText("Capture and Send Screenshot");
-        broadcastScreenshotButton.addActionListener(e -> sendScreenshot("broadcast"));
-
+        
+        JButton screenBtn = createStyledButton("Screen", new Color(46, 204, 113));
+        screenBtn.setPreferredSize(new Dimension(100, 40)); // Tăng độ rộng
+        screenBtn.addActionListener(e -> sendScreenshot("broadcast"));
+        
         broadcastSendButton = createStyledButton("Send", new Color(52, 152, 219));
-        broadcastSendButton.setPreferredSize(new Dimension(70, 40));
+        broadcastSendButton.setPreferredSize(new Dimension(80, 40)); // Tăng độ rộng
         broadcastSendButton.addActionListener(e -> sendBroadcastMessage());
 
-        buttonPanel.add(broadcastEmojiButton);
-        buttonPanel.add(broadcastFileButton);
-        buttonPanel.add(broadcastScreenshotButton);
-        buttonPanel.add(broadcastSendButton);
+        btnPanel.add(broadcastEmojiButton);
+        btnPanel.add(broadcastFileButton);
+        btnPanel.add(screenBtn);
+        btnPanel.add(broadcastSendButton);
 
         inputPanel.add(broadcastInput, BorderLayout.CENTER);
-        inputPanel.add(buttonPanel, BorderLayout.EAST);
-
+        inputPanel.add(btnPanel, BorderLayout.EAST);
         panel.add(inputPanel, BorderLayout.SOUTH);
-
         return panel;
     }
 
+    // 2. Private Chat Tab
     private JPanel createPrivateTab() {
-        JPanel panel = new JPanel(new BorderLayout(15, 10));
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
         panel.setBackground(BACKGROUND_COLOR);
-        panel.setBorder(new EmptyBorder(15, 15, 15, 15));
+        panel.setBorder(new EmptyBorder(10, 10, 10, 10));
 
-        // Left side - User list
+        // LEFT: List User + Search
         JPanel leftPanel = new JPanel(new BorderLayout(5, 5));
         leftPanel.setBackground(PANEL_COLOR);
-        leftPanel.setBorder(BorderFactory.createCompoundBorder(
-                new LineBorder(BORDER_COLOR, 2, true),
-                new EmptyBorder(10, 10, 10, 10)));
-        leftPanel.setPreferredSize(new Dimension(250, 0));
+        leftPanel.setBorder(new EmptyBorder(5, 5, 5, 5));
+        leftPanel.setPreferredSize(new Dimension(280, 0));
 
-        JLabel userListLabel = new JLabel("ONLINE USERS");
-        userListLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        userListLabel.setForeground(ACCENT_COLOR);
-        leftPanel.add(userListLabel, BorderLayout.NORTH);
+        JPanel searchPanel = new JPanel(new BorderLayout());
+        searchPanel.setBackground(PANEL_COLOR);
+        JLabel lbl = new JLabel(" ONLINE USERS ");
+        lbl.setForeground(ACCENT_COLOR);
+        lbl.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        searchPanel.add(lbl, BorderLayout.NORTH);
+        
+        userSearchField = new JTextField();
+        styleTextField(userSearchField);
+        userSearchField.getDocument().addDocumentListener(new DocumentListener() {
+            public void insertUpdate(DocumentEvent e) { filterUserList(); }
+            public void removeUpdate(DocumentEvent e) { filterUserList(); }
+            public void changedUpdate(DocumentEvent e) { filterUserList(); }
+        });
+        searchPanel.add(userSearchField, BorderLayout.CENTER);
+        
+        leftPanel.add(searchPanel, BorderLayout.NORTH);
 
         userListModel = new DefaultListModel<>();
         userList = createStyledList(userListModel);
-        userList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        JScrollPane userScroll = createStyledScrollPane(userList);
-        leftPanel.add(userScroll, BorderLayout.CENTER);
+        leftPanel.add(createStyledScrollPane(userList), BorderLayout.CENTER);
+        
+        // Event chọn user
+        userList.addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) {
+                String selected = userList.getSelectedValue();
+                if (selected != null) {
+                    String username = selected.split(" \\(")[0];
+                    privateArea.clearText();
+                    client.requestChatHistory(username);
+                }
+            }
+        });
 
         panel.add(leftPanel, BorderLayout.WEST);
 
-        // Right side - Chat
+        // RIGHT: Chat Area
         JPanel rightPanel = new JPanel(new BorderLayout(10, 10));
         rightPanel.setBackground(BACKGROUND_COLOR);
 
         privateArea = createStyledEmojiPane();
-        JScrollPane chatScroll = createStyledScrollPane(privateArea);
-        rightPanel.add(chatScroll, BorderLayout.CENTER);
+        rightPanel.add(createStyledScrollPane(privateArea), BorderLayout.CENTER);
 
-        // Input panel
         JPanel inputPanel = new JPanel(new BorderLayout(10, 0));
         inputPanel.setBackground(BACKGROUND_COLOR);
 
@@ -410,113 +383,87 @@ public class ClientUI extends JFrame {
         styleTextField(privateInput);
         privateInput.addActionListener(e -> sendPrivateMessage());
 
-        // Button panel
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
-        buttonPanel.setBackground(BACKGROUND_COLOR);
-
-        privateEmojiButton = createStyledButton("", new Color(241, 196, 15));
+        JPanel btnPanel = createButtonPanel();
+        
+        privateEmojiButton = createStyledButton("😊", new Color(241, 196, 15));
         privateEmojiButton.setPreferredSize(new Dimension(50, 40));
-        ImageIcon emojiIcon2 = IconManager.loadIcon("emoji_smile.png", 24);
-        if (emojiIcon2 != null) {
-            privateEmojiButton.setIcon(emojiIcon2);
-        } else {
-            privateEmojiButton.setText("😊");
-        }
-        privateEmojiButton.setToolTipText("Insert Emoji");
         privateEmojiButton.addActionListener(e -> showEmojiPicker(privateInput));
-
+        
         privateFileButton = createStyledButton("File", new Color(155, 89, 182));
-        privateFileButton.setPreferredSize(new Dimension(60, 40));
-        privateFileButton.setFont(new Font("Segoe UI", Font.BOLD, 11));
-        privateFileButton.setToolTipText("Send File");
+        privateFileButton.setPreferredSize(new Dimension(80, 40));
         privateFileButton.addActionListener(e -> sendFile("private"));
-
-        JButton privateScreenshotButton = createStyledButton("Screen", new Color(46, 204, 113));
-        privateScreenshotButton.setPreferredSize(new Dimension(70, 40));
-        privateScreenshotButton.setFont(new Font("Segoe UI", Font.BOLD, 11));
-        privateScreenshotButton.setToolTipText("Capture and Send Screenshot");
-        privateScreenshotButton.addActionListener(e -> sendScreenshot("private"));
-
-        JButton privateVideoCallButton = createStyledButton("Call", new Color(231, 76, 60));
-        privateVideoCallButton.setPreferredSize(new Dimension(60, 40));
-        privateVideoCallButton.setFont(new Font("Segoe UI", Font.BOLD, 11));
-        privateVideoCallButton.setToolTipText("Start Video/Audio Call");
-        privateVideoCallButton.addActionListener(e -> startVideoCall());
-
+        
+        JButton screenBtn = createStyledButton("Screen", new Color(46, 204, 113));
+        screenBtn.setPreferredSize(new Dimension(100, 40));
+        screenBtn.addActionListener(e -> sendScreenshot("private"));
+        
+        JButton callBtn = createStyledButton("Call", new Color(231, 76, 60));
+        callBtn.setPreferredSize(new Dimension(80, 40));
+        callBtn.addActionListener(e -> startVideoCall());
+        
         privateSendButton = createStyledButton("Send", SUCCESS_COLOR);
-        privateSendButton.setPreferredSize(new Dimension(70, 40));
+        privateSendButton.setPreferredSize(new Dimension(80, 40));
         privateSendButton.addActionListener(e -> sendPrivateMessage());
 
-        buttonPanel.add(privateEmojiButton);
-        buttonPanel.add(privateFileButton);
-        buttonPanel.add(privateScreenshotButton);
-        buttonPanel.add(privateVideoCallButton);
-        buttonPanel.add(privateSendButton);
+        btnPanel.add(privateEmojiButton);
+        btnPanel.add(privateFileButton);
+        btnPanel.add(screenBtn);
+        btnPanel.add(callBtn);
+        btnPanel.add(privateSendButton);
 
         inputPanel.add(privateInput, BorderLayout.CENTER);
-        inputPanel.add(buttonPanel, BorderLayout.EAST);
-
+        inputPanel.add(btnPanel, BorderLayout.EAST);
+        
         rightPanel.add(inputPanel, BorderLayout.SOUTH);
         panel.add(rightPanel, BorderLayout.CENTER);
 
         return panel;
     }
 
+    // 3. Room Tab
     private JPanel createRoomTab() {
-        JPanel panel = new JPanel(new BorderLayout(15, 10));
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
         panel.setBackground(BACKGROUND_COLOR);
-        panel.setBorder(new EmptyBorder(15, 15, 15, 15));
+        panel.setBorder(new EmptyBorder(10, 10, 10, 10));
 
-        // Left side - Room list
         JPanel leftPanel = new JPanel(new BorderLayout(5, 5));
         leftPanel.setBackground(PANEL_COLOR);
-        leftPanel.setBorder(BorderFactory.createCompoundBorder(
-                new LineBorder(BORDER_COLOR, 2, true),
-                new EmptyBorder(10, 10, 10, 10)));
-        leftPanel.setPreferredSize(new Dimension(270, 0));
+        leftPanel.setPreferredSize(new Dimension(280, 0));
+        leftPanel.setBorder(new EmptyBorder(5, 5, 5, 5));
 
-        JLabel roomListLabel = new JLabel("CHAT ROOMS");
-        roomListLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        roomListLabel.setForeground(ACCENT_COLOR);
-        leftPanel.add(roomListLabel, BorderLayout.NORTH);
+        JLabel lbl = new JLabel(" CHAT ROOMS ");
+        lbl.setForeground(ACCENT_COLOR); lbl.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        leftPanel.add(lbl, BorderLayout.NORTH);
 
         roomListModel = new DefaultListModel<>();
         roomList = createStyledList(roomListModel);
-        roomList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        JScrollPane roomScroll = createStyledScrollPane(roomList);
-        leftPanel.add(roomScroll, BorderLayout.CENTER);
+        leftPanel.add(createStyledScrollPane(roomList), BorderLayout.CENTER);
 
-        // Room buttons
-        JPanel roomButtonPanel = new JPanel(new GridLayout(3, 1, 0, 8));
-        roomButtonPanel.setBackground(PANEL_COLOR);
-        roomButtonPanel.setBorder(new EmptyBorder(10, 0, 0, 0));
-
+        JPanel roomBtns = new JPanel(new GridLayout(3, 1, 0, 5));
+        roomBtns.setBackground(PANEL_COLOR);
+        
         joinRoomButton = createStyledButton("Join Room", SUCCESS_COLOR);
         joinRoomButton.addActionListener(e -> handleJoinRoom());
-
+        
         leaveRoomButton = createStyledButton("Leave Room", new Color(230, 126, 34));
         leaveRoomButton.setEnabled(false);
         leaveRoomButton.addActionListener(e -> handleLeaveRoom());
-
+        
         createRoomButton = createStyledButton("Create Room", new Color(52, 152, 219));
         createRoomButton.addActionListener(e -> handleCreateRoom());
+        
+        roomBtns.add(joinRoomButton); roomBtns.add(leaveRoomButton); roomBtns.add(createRoomButton);
+        leftPanel.add(roomBtns, BorderLayout.SOUTH);
 
-        roomButtonPanel.add(joinRoomButton);
-        roomButtonPanel.add(leaveRoomButton);
-        roomButtonPanel.add(createRoomButton);
-
-        leftPanel.add(roomButtonPanel, BorderLayout.SOUTH);
         panel.add(leftPanel, BorderLayout.WEST);
 
-        // Right side - Chat
+        // Right side
         JPanel rightPanel = new JPanel(new BorderLayout(10, 10));
         rightPanel.setBackground(BACKGROUND_COLOR);
 
         roomArea = createStyledEmojiPane();
-        JScrollPane chatScroll = createStyledScrollPane(roomArea);
-        rightPanel.add(chatScroll, BorderLayout.CENTER);
+        rightPanel.add(createStyledScrollPane(roomArea), BorderLayout.CENTER);
 
-        // Input panel
         JPanel inputPanel = new JPanel(new BorderLayout(10, 0));
         inputPanel.setBackground(BACKGROUND_COLOR);
 
@@ -525,99 +472,49 @@ public class ClientUI extends JFrame {
         roomInput.setEnabled(false);
         roomInput.addActionListener(e -> sendRoomMessage());
 
-        // Button panel
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
-        buttonPanel.setBackground(BACKGROUND_COLOR);
-
-        roomEmojiButton = createStyledButton("", new Color(241, 196, 15));
+        JPanel btnPanel = createButtonPanel();
+        
+        roomEmojiButton = createStyledButton("😊", new Color(241, 196, 15));
         roomEmojiButton.setPreferredSize(new Dimension(50, 40));
-        ImageIcon emojiIcon3 = IconManager.loadIcon("emoji_smile.png", 24);
-        if (emojiIcon3 != null) {
-            roomEmojiButton.setIcon(emojiIcon3);
-        } else {
-            roomEmojiButton.setText("😊");
-        }
-        roomEmojiButton.setToolTipText("Insert Emoji");
         roomEmojiButton.setEnabled(false);
         roomEmojiButton.addActionListener(e -> showEmojiPicker(roomInput));
-
+        
         roomFileButton = createStyledButton("File", new Color(155, 89, 182));
-        roomFileButton.setPreferredSize(new Dimension(60, 40));
-        roomFileButton.setFont(new Font("Segoe UI", Font.BOLD, 11));
-        roomFileButton.setToolTipText("Send File");
+        roomFileButton.setPreferredSize(new Dimension(80, 40));
         roomFileButton.setEnabled(false);
         roomFileButton.addActionListener(e -> sendFile("room"));
-
-        JButton roomScreenshotButton = createStyledButton("Screen", new Color(46, 204, 113));
-        roomScreenshotButton.setPreferredSize(new Dimension(70, 40));
-        roomScreenshotButton.setFont(new Font("Segoe UI", Font.BOLD, 11));
-        roomScreenshotButton.setToolTipText("Capture and Send Screenshot");
-        roomScreenshotButton.setEnabled(false);
-        roomScreenshotButton.addActionListener(e -> sendScreenshot("room"));
-
+        
+        JButton screenBtn = createStyledButton("Screen", new Color(46, 204, 113));
+        screenBtn.setPreferredSize(new Dimension(100, 40));
+        screenBtn.setEnabled(false);
+        screenBtn.addActionListener(e -> sendScreenshot("room"));
+        
         roomSendButton = createStyledButton("Send", SUCCESS_COLOR);
-        roomSendButton.setPreferredSize(new Dimension(70, 40));
+        roomSendButton.setPreferredSize(new Dimension(80, 40));
         roomSendButton.setEnabled(false);
         roomSendButton.addActionListener(e -> sendRoomMessage());
 
-        buttonPanel.add(roomEmojiButton);
-        buttonPanel.add(roomFileButton);
-        buttonPanel.add(roomScreenshotButton);
-        buttonPanel.add(roomSendButton);
+        btnPanel.add(roomEmojiButton);
+        btnPanel.add(roomFileButton);
+        btnPanel.add(screenBtn);
+        btnPanel.add(roomSendButton);
 
         inputPanel.add(roomInput, BorderLayout.CENTER);
-        inputPanel.add(buttonPanel, BorderLayout.EAST);
-
+        inputPanel.add(btnPanel, BorderLayout.EAST);
         rightPanel.add(inputPanel, BorderLayout.SOUTH);
+        
         panel.add(rightPanel, BorderLayout.CENTER);
-
         return panel;
     }
 
-    private void handleConnect() {
-        String serverIP = serverIPField.getText().trim();
-        String portStr = serverPortField.getText().trim();
-        String username = usernameField.getText().trim();
-
-        if (serverIP.isEmpty() || portStr.isEmpty() || username.isEmpty()) {
-            JOptionPane.showMessageDialog(this,
-                    "Please fill in all fields!",
-                    "Error", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-
-        try {
-            int port = Integer.parseInt(portStr);
-
-            if (client.connect(serverIP, port, username)) {
-                showChatPanel();
-                setTitle("Chat Client - " + username);
-                usernameLabel.setText(username);
-                statusLabel.setText("CONNECTED");
-                statusLabel.setForeground(SUCCESS_COLOR);
-            }
-
-        } catch (NumberFormatException e) {
-            JOptionPane.showMessageDialog(this,
-                    "Invalid port number!",
-                    "Error", JOptionPane.ERROR_MESSAGE);
-        }
-    }
-
+    // --- ACTIONS ---
     private void handleDisconnect() {
-        int confirm = JOptionPane.showConfirmDialog(this,
-                "Are you sure you want to disconnect?",
-                "Confirm Disconnect",
-                JOptionPane.YES_NO_OPTION);
-
+        int confirm = JOptionPane.showConfirmDialog(this, "Are you sure?", "Disconnect", JOptionPane.YES_NO_OPTION);
         if (confirm == JOptionPane.YES_OPTION) {
             client.disconnect();
             showLoginPanel();
-            setTitle("Chat Application");
+            setTitle("Chat App");
             statusLabel.setText("DISCONNECTED");
-            statusLabel.setForeground(ERROR_COLOR);
-
-            // Clear chat areas
             broadcastArea.clearText();
             privateArea.clearText();
             roomArea.clearText();
@@ -629,131 +526,80 @@ public class ClientUI extends JFrame {
     }
 
     private void sendBroadcastMessage() {
-        String message = broadcastInput.getText().trim();
-        if (!message.isEmpty()) {
-            client.sendBroadcastMessage(message);
-            broadcastInput.setText("");
-        }
+        String msg = broadcastInput.getText().trim();
+        if (!msg.isEmpty()) { client.sendBroadcastMessage(msg); broadcastInput.setText(""); }
     }
 
     private void sendPrivateMessage() {
-        String message = privateInput.getText().trim();
-        String selectedUser = userList.getSelectedValue();
-
-        if (message.isEmpty()) {
-            return;
-        }
-
-        if (selectedUser == null) {
-            JOptionPane.showMessageDialog(this,
-                    "Please select a recipient!",
-                    "Warning", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-
-        // Extract username (remove IP info)
-        String receiver = selectedUser.split(" \\(")[0];
-
-        if (receiver.equals(client.getUsername())) {
-            JOptionPane.showMessageDialog(this,
-                    "Cannot send message to yourself!",
-                    "Warning", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-
-        client.sendPrivateMessage(receiver, message);
+        String msg = privateInput.getText().trim();
+        String selected = userList.getSelectedValue();
+        if (msg.isEmpty()) return;
+        if (selected == null) { showError("Select a user!"); return; }
+        String receiver = selected.split(" \\(")[0];
+        if (receiver.equals(client.getUsername())) { showError("Cannot msg yourself!"); return; }
+        client.sendPrivateMessage(receiver, msg);
         privateInput.setText("");
     }
 
     private void sendRoomMessage() {
-        String message = roomInput.getText().trim();
-
-        if (message.isEmpty() || currentRoom == null) {
-            return;
-        }
-
-        client.sendRoomMessage(currentRoom, message);
-        roomInput.setText("");
+        String msg = roomInput.getText().trim();
+        if (!msg.isEmpty() && currentRoom != null) { client.sendRoomMessage(currentRoom, msg); roomInput.setText(""); }
     }
 
     private void handleJoinRoom() {
-        String selectedRoom = roomList.getSelectedValue();
-
-        if (selectedRoom == null) {
-            JOptionPane.showMessageDialog(this,
-                    "Please select a room!",
-                    "Warning", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-
-        // Extract room name (without member count)
-        String roomName = selectedRoom.split(" \\(")[0];
-
-        // Add # prefix if not present
-        if (!roomName.startsWith("#")) {
-            roomName = "#" + roomName;
-        }
-
-        client.joinRoom(roomName);
-        currentRoom = roomName;
-        roomInput.setEnabled(true);
-        roomSendButton.setEnabled(true);
-        roomEmojiButton.setEnabled(true);
-        roomFileButton.setEnabled(true);
-        leaveRoomButton.setEnabled(true);
-        roomArea.appendText("=== Joined room: " + roomName + " ===");
-        roomArea.appendText("----------------------------------------");
+        String selected = roomList.getSelectedValue();
+        if (selected == null) { showError("Select a room!"); return; }
+        String name = selected.split(" \\(")[0];
+        if (!name.startsWith("#")) name = "#" + name;
+        client.joinRoom(name);
+        currentRoom = name;
+        enableRoomControls(true);
+        roomArea.appendText("=== Joined " + name + " ===");
     }
 
     private void handleLeaveRoom() {
         if (currentRoom != null) {
             client.leaveRoom(currentRoom);
-            roomArea.appendText("========================================");
-            roomArea.appendText("=== Left room: " + currentRoom + " ===");
-            roomArea.appendText("");
+            roomArea.appendText("=== Left " + currentRoom + " ===");
             currentRoom = null;
-            roomInput.setEnabled(false);
-            roomSendButton.setEnabled(false);
-            roomEmojiButton.setEnabled(false);
-            roomFileButton.setEnabled(false);
-            leaveRoomButton.setEnabled(false);
+            enableRoomControls(false);
         }
+    }
+    
+    private void enableRoomControls(boolean enable) {
+        roomInput.setEnabled(enable);
+        roomSendButton.setEnabled(enable);
+        roomEmojiButton.setEnabled(enable);
+        roomFileButton.setEnabled(enable);
+        leaveRoomButton.setEnabled(enable);
     }
 
     private void handleCreateRoom() {
-        String roomName = JOptionPane.showInputDialog(this,
-                "Enter room name (without #):",
-                "Create New Room",
-                JOptionPane.PLAIN_MESSAGE);
-
-        if (roomName != null && !roomName.trim().isEmpty()) {
-            // Remove # if user added it
-            roomName = roomName.trim().replace("#", "");
-
-            // Validate room name
-            if (roomName.matches("[a-zA-Z0-9_-]+")) {
-                client.createRoom(roomName);
-            } else {
-                showError("Room name can only contain letters, numbers, _ and -");
-            }
+        String name = JOptionPane.showInputDialog(this, "Room Name:");
+        if (name != null && !name.trim().isEmpty()) {
+            client.createRoom(name.trim().replace("#", ""));
         }
     }
 
-    private void showLoginPanel() {
-        cardLayout.show(mainContainer, "LOGIN");
-    }
+    private void showLoginPanel() { cardLayout.show(mainContainer, "LOGIN"); }
+    private void showChatPanel() { cardLayout.show(mainContainer, "CHAT"); }
 
-    private void showChatPanel() {
-        cardLayout.show(mainContainer, "CHAT");
-    }
-
+    // --- UPDATE UI ---
     public void updateUserList(List<User> users) {
+        this.allUsers = users;
+        filterUserList();
+    }
+    
+    private void filterUserList() {
         SwingUtilities.invokeLater(() -> {
+            if (allUsers == null) return;
+            String q = userSearchField.getText().toLowerCase();
             userListModel.clear();
-            for (User user : users) {
-                if (!user.getUsername().equals(client.getUsername())) {
-                    userListModel.addElement(user.getUsername() + " (" +
-                            user.getIpAddress() + ":" + user.getPort() + ")");
+            for (User u : allUsers) {
+                if (!u.getUsername().equals(client.getUsername())) {
+                    if (u.getUsername().toLowerCase().contains(q)) {
+                        userListModel.addElement(u.getUsername() + " (" + u.getIpAddress() + ")");
+                    }
                 }
             }
         });
@@ -762,371 +608,256 @@ public class ClientUI extends JFrame {
     public void updateRoomList(List<ChatRoom> rooms) {
         SwingUtilities.invokeLater(() -> {
             roomListModel.clear();
-            for (ChatRoom room : rooms) {
-                roomListModel.addElement(room.getDisplayName() + " (" +
-                        room.getMemberCount() + "/" + room.getMaxMembers() + ")");
-            }
+            for (ChatRoom r : rooms) roomListModel.addElement(r.getDisplayName() + " (" + r.getMemberCount() + ")");
         });
     }
 
     public void displayBroadcastMessage(Message msg) {
         SwingUtilities.invokeLater(() -> {
             String prefix = msg.getSender().equals(client.getUsername()) ? "You" : msg.getSender();
-            String text = String.format("[%s] %s: %s",
-                    msg.getTimestamp(), prefix, msg.getContent());
-            broadcastArea.appendText(text);
+            broadcastArea.appendText(String.format("[%s] %s: %s", msg.getTimestamp(), prefix, msg.getContent()));
         });
     }
 
     public void displayPrivateMessage(Message msg) {
         SwingUtilities.invokeLater(() -> {
             String sender = msg.getSender();
-            String prefix;
-            if (sender.equals(client.getUsername())) {
-                prefix = "You -> " + msg.getReceiver();
-            } else {
-                prefix = sender;
-            }
-            String text = String.format("[%s] %s: %s",
-                    msg.getTimestamp(), prefix, msg.getContent());
-            privateArea.appendText(text);
+            String prefix = sender.equals(client.getUsername()) ? "You -> " + msg.getReceiver() : sender;
+            privateArea.appendText(String.format("[%s] %s: %s", msg.getTimestamp(), prefix, msg.getContent()));
         });
     }
 
     public void displayRoomMessage(Message msg) {
         SwingUtilities.invokeLater(() -> {
-            String text = String.format("[%s] %s: %s",
-                    msg.getTimestamp(), msg.getSender(), msg.getContent());
-            roomArea.appendText(text);
+            roomArea.appendText(String.format("[%s] %s: %s", msg.getTimestamp(), msg.getSender(), msg.getContent()));
         });
     }
 
-    public void showError(String message) {
+    public void displayFileInChat(String sender, String fileName, byte[] fileData, boolean isImage, String tabType) {
         SwingUtilities.invokeLater(() -> {
-            JOptionPane.showMessageDialog(this, message, "Error", JOptionPane.ERROR_MESSAGE);
+            EmojiTextPane targetArea;
+            if (tabType.equals("broadcast")) targetArea = broadcastArea;
+            else if (tabType.equals("room")) targetArea = roomArea;
+            else targetArea = privateArea;
+            
+            String timestamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
+            String prefix = sender.equals(client.getUsername()) ? "You" : sender;
+            String header = String.format("[%s] %s sent %s:", timestamp, prefix, isImage ? "a photo" : "a file");
+
+            if (isImage && fileData != null) {
+                try {
+                     ImageIcon originalIcon = new ImageIcon(fileData);
+                     // Resize ảnh nếu quá to
+                     int maxWidth = 250;
+                     if (originalIcon.getIconWidth() > maxWidth) {
+                         Image scaled = originalIcon.getImage().getScaledInstance(maxWidth, -1, Image.SCALE_SMOOTH);
+                         originalIcon = new ImageIcon(scaled);
+                     }
+                     targetArea.insertImage(originalIcon, header);
+                } catch(Exception e) {}
+            } else {
+                // --- SỬA LỖI HIỂN THỊ NÚT FILE ---
+                JButton fileButton = new JButton("📄 " + fileName + " (" + (fileData != null ? fileData.length/1024 : 0) + " KB)");
+                
+                // Style sửa lỗi bị trắng
+                fileButton.setFont(new Font("Segoe UI", Font.BOLD, 12));
+                fileButton.setBackground(new Color(52, 152, 219)); // Màu xanh dương
+                fileButton.setForeground(Color.WHITE);
+                fileButton.setFocusPainted(false);
+                fileButton.setBorderPainted(false); // Bỏ viền mặc định
+                fileButton.setOpaque(true);         // Bắt buộc vẽ màu nền
+                fileButton.setContentAreaFilled(true);
+                fileButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+                fileButton.setMargin(new Insets(5, 10, 5, 10)); // Tạo khoảng cách nội dung
+                
+                // Nếu là file lịch sử (không có data thực), nút sẽ bị disable
+                if (fileData == null) {
+                    fileButton.setText("📄 " + fileName + " (File history)");
+                    fileButton.setBackground(Color.GRAY);
+                    fileButton.setEnabled(false);
+                } else {
+                    fileButton.addActionListener(e -> {
+                        JFileChooser fileChooser = new JFileChooser();
+                        fileChooser.setSelectedFile(new File(fileName));
+                        if (fileChooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+                            try {
+                                Files.write(fileChooser.getSelectedFile().toPath(), fileData);
+                                JOptionPane.showMessageDialog(this, "Saved successfully!");
+                            } catch (IOException ex) { showError("Error saving: " + ex.getMessage()); }
+                        }
+                    });
+                }
+                
+                targetArea.insertComponent(fileButton, header);
+            }
         });
     }
 
-    public void showInfo(String message) {
-        SwingUtilities.invokeLater(() -> {
-            JOptionPane.showMessageDialog(this, message, "Information", JOptionPane.INFORMATION_MESSAGE);
+    // --- STYLING & HELPERS ---
+    private void styleTextField(JTextField tf) {
+        tf.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        tf.setBackground(BACKGROUND_COLOR);
+        tf.setForeground(TEXT_COLOR);
+        tf.setCaretColor(ACCENT_COLOR);
+        tf.setBorder(BorderFactory.createCompoundBorder(
+                new LineBorder(BORDER_COLOR, 1), new EmptyBorder(8, 10, 8, 10)));
+    }
+
+    private JButton createStyledButton(String text, Color bg) {
+        JButton b = new JButton(text);
+        b.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        b.setBackground(bg);
+        b.setForeground(Color.WHITE);
+        b.setFocusPainted(false);
+        b.setBorderPainted(false);
+        b.setOpaque(true);
+        b.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        b.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent e) { if(b.isEnabled()) b.setBackground(bg.brighter()); }
+            public void mouseExited(java.awt.event.MouseEvent e) { if(b.isEnabled()) b.setBackground(bg); }
         });
-    }
-
-    // Emoji Picker Dialog
-    private void showEmojiPicker(JTextField targetField) {
-        JDialog emojiDialog = new JDialog(this, "Select Emoji", true);
-        emojiDialog.setLayout(new BorderLayout(10, 10));
-        emojiDialog.setSize(600, 500);
-        emojiDialog.setLocationRelativeTo(this);
-        emojiDialog.getContentPane().setBackground(BACKGROUND_COLOR);
-
-        // Title
-        JLabel titleLabel = new JLabel("Select Emoji Icon");
-        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 16));
-        titleLabel.setForeground(ACCENT_COLOR);
-        titleLabel.setHorizontalAlignment(JLabel.CENTER);
-        titleLabel.setBorder(new EmptyBorder(10, 10, 10, 10));
-        emojiDialog.add(titleLabel, BorderLayout.NORTH);
-
-        // Emoji grid panel with scroll
-        JPanel emojiGridPanel = new JPanel();
-
-        // Get available emoji icons
-        List<String> availableEmojis = IconManager.getAvailableEmojiIcons();
-
-        if (availableEmojis.isEmpty()) {
-            // No icons available, show message
-            JLabel noIconsLabel = new JLabel("<html><center>No emoji icons found!<br><br>" +
-                    "Please add emoji icon files to:<br><b>resources/icons/</b><br><br>" +
-                    "Example: emoji_smile.png, emoji_heart.png, etc.</center></html>");
-            noIconsLabel.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-            noIconsLabel.setForeground(TEXT_COLOR);
-            noIconsLabel.setHorizontalAlignment(JLabel.CENTER);
-            emojiDialog.add(noIconsLabel, BorderLayout.CENTER);
-        } else {
-            // Calculate grid size
-            int cols = 10;
-            int rows = (int) Math.ceil(availableEmojis.size() / (double) cols);
-
-            emojiGridPanel.setLayout(new GridLayout(rows, cols, 5, 5));
-            emojiGridPanel.setBackground(PANEL_COLOR);
-            emojiGridPanel.setBorder(new EmptyBorder(10, 10, 10, 10));
-
-            // Add emoji buttons
-            for (String emojiIconName : availableEmojis) {
-                JButton emojiBtn = new JButton();
-                ImageIcon icon = IconManager.loadIcon(emojiIconName, 40);
-                emojiBtn.setIcon(icon);
-                emojiBtn.setToolTipText(emojiIconName.replace(".png", "").replace("emoji_", ""));
-                emojiBtn.setPreferredSize(new Dimension(50, 50));
-                emojiBtn.setBackground(PANEL_COLOR);
-                emojiBtn.setFocusPainted(false);
-                emojiBtn.setBorder(BorderFactory.createLineBorder(BORDER_COLOR, 2));
-                emojiBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
-
-                emojiBtn.addActionListener(e -> {
-                    // Insert emoji code into text field
-                    String emojiCode = IconManager.getEmojiCode(emojiIconName);
-                    String currentText = targetField.getText();
-                    targetField.setText(currentText + emojiCode);
-                    emojiDialog.dispose();
-                });
-
-                // Hover effect
-                emojiBtn.addMouseListener(new java.awt.event.MouseAdapter() {
-                    public void mouseEntered(java.awt.event.MouseEvent evt) {
-                        emojiBtn.setBackground(ACCENT_COLOR);
-                    }
-
-                    public void mouseExited(java.awt.event.MouseEvent evt) {
-                        emojiBtn.setBackground(PANEL_COLOR);
-                    }
-                });
-
-                emojiGridPanel.add(emojiBtn);
-            }
-
-            JScrollPane scrollPane = new JScrollPane(emojiGridPanel);
-            scrollPane.setBorder(new LineBorder(BORDER_COLOR, 2));
-            scrollPane.getViewport().setBackground(PANEL_COLOR);
-            emojiDialog.add(scrollPane, BorderLayout.CENTER);
-        }
-
-        // Info label
-        JLabel infoLabel = new JLabel("Click an emoji to insert into your message");
-        infoLabel.setFont(new Font("Segoe UI", Font.ITALIC, 12));
-        infoLabel.setForeground(TEXT_COLOR);
-        infoLabel.setHorizontalAlignment(JLabel.CENTER);
-        infoLabel.setBorder(new EmptyBorder(10, 10, 10, 10));
-        emojiDialog.add(infoLabel, BorderLayout.SOUTH);
-
-        emojiDialog.setVisible(true);
-    }
-
-    // Send File
-    private void sendFile(String mode) {
-        JFileChooser fileChooser = new JFileChooser();
-        fileChooser.setDialogTitle("Select File to Send (Max 5MB)");
-
-        int result = fileChooser.showOpenDialog(this);
-
-        if (result == JFileChooser.APPROVE_OPTION) {
-            File selectedFile = fileChooser.getSelectedFile();
-
-            // Check file size (limit to 5MB)
-            if (selectedFile.length() > 5 * 1024 * 1024) {
-                showError("File size exceeds 5MB limit!");
-                return;
-            }
-
-            // Determine receiver based on mode
-            String receiver = null;
-            if (mode.equals("private")) {
-                String selectedUser = userList.getSelectedValue();
-                if (selectedUser == null) {
-                    showError("Please select a recipient!");
-                    return;
-                }
-                receiver = selectedUser.split(" \\(")[0];
-
-                if (receiver.equals(client.getUsername())) {
-                    showError("Cannot send file to yourself!");
-                    return;
-                }
-            } else if (mode.equals("room")) {
-                if (currentRoom == null) {
-                    showError("Please join a room first!");
-                    return;
-                }
-                receiver = currentRoom;
-            }
-
-            // Send file through client
-            client.sendFile(selectedFile, receiver, mode);
-        }
-    }
-
-    // Send Screenshot
-    private void sendScreenshot(String mode) {
-        // Determine receiver based on mode
-        String receiver = null;
-        if (mode.equals("private")) {
-            String selectedUser = userList.getSelectedValue();
-            if (selectedUser == null) {
-                showError("Please select a recipient!");
-                return;
-            }
-            receiver = selectedUser.split(" \\(")[0];
-
-            if (receiver.equals(client.getUsername())) {
-                showError("Cannot send screenshot to yourself!");
-                return;
-            }
-        } else if (mode.equals("room")) {
-            if (currentRoom == null) {
-                showError("Please join a room first!");
-                return;
-            }
-            receiver = currentRoom;
-        }
-
-        // Send screenshot through client
-        client.sendScreenshot(receiver, mode);
-    }
-
-    // Start Video Call
-    private void startVideoCall() {
-        String selectedUser = userList.getSelectedValue();
-        if (selectedUser == null) {
-            showError("Please select a user to call!");
-            return;
-        }
-
-        String receiver = selectedUser.split(" \\(")[0];
-
-        if (receiver.equals(client.getUsername())) {
-            showError("Cannot call yourself!");
-            return;
-        }
-
-        // Show dialog to choose call type
-        String[] options = { "Video Call", "Audio Call", "Cancel" };
-        int choice = JOptionPane.showOptionDialog(this,
-                "Call " + receiver + ":",
-                "Start Call",
-                JOptionPane.YES_NO_CANCEL_OPTION,
-                JOptionPane.QUESTION_MESSAGE,
-                null,
-                options,
-                options[0]);
-
-        if (choice == 0) {
-            // Video call
-            client.sendVideoCallRequest(receiver, true, true);
-        } else if (choice == 1) {
-            // Audio only
-            client.sendVideoCallRequest(receiver, false, true);
-        }
-    }
-
-    // Helper methods for styling
-    private void styleTextField(JTextField textField) {
-        textField.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-        textField.setBackground(BACKGROUND_COLOR);
-        textField.setForeground(TEXT_COLOR);
-        textField.setCaretColor(ACCENT_COLOR);
-        textField.setBorder(BorderFactory.createCompoundBorder(
-                new LineBorder(BORDER_COLOR, 1),
-                new EmptyBorder(8, 12, 8, 12)));
-    }
-
-    private JButton createStyledButton(String text, Color bgColor) {
-        JButton button = new JButton(text);
-        button.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        button.setBackground(bgColor);
-        button.setForeground(Color.WHITE);
-        button.setFocusPainted(false);
-        button.setBorderPainted(false);
-        button.setContentAreaFilled(true);
-        button.setOpaque(true);
-        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        button.setBorder(new EmptyBorder(10, 20, 10, 20));
-
-        // Hover effect
-        button.addMouseListener(new java.awt.event.MouseAdapter() {
-            public void mouseEntered(java.awt.event.MouseEvent evt) {
-                if (button.isEnabled()) {
-                    button.setBackground(bgColor.brighter());
-                }
-            }
-
-            public void mouseExited(java.awt.event.MouseEvent evt) {
-                if (button.isEnabled()) {
-                    button.setBackground(bgColor);
-                }
-            }
-        });
-
-        return button;
-    }
-
-    private JTextArea createStyledTextArea() {
-        JTextArea area = new JTextArea();
-        area.setEditable(false);
-        area.setFont(new Font("Consolas", Font.PLAIN, 13));
-        area.setBackground(PANEL_COLOR);
-        area.setForeground(TEXT_COLOR);
-        area.setCaretColor(TEXT_COLOR);
-        area.setLineWrap(true);
-        area.setWrapStyleWord(true);
-        area.setBorder(new EmptyBorder(10, 10, 10, 10));
-        return area;
+        return b;
     }
 
     private EmojiTextPane createStyledEmojiPane() {
-        EmojiTextPane pane = new EmojiTextPane();
-        pane.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        pane.setBackground(PANEL_COLOR);
-        pane.setForeground(TEXT_COLOR);
-        pane.setCaretColor(TEXT_COLOR);
-        pane.setBorder(new EmptyBorder(10, 10, 10, 10));
-        return pane;
+        EmojiTextPane p = new EmojiTextPane();
+        p.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        p.setBackground(PANEL_COLOR);
+        p.setForeground(TEXT_COLOR);
+        p.setBorder(new EmptyBorder(10, 10, 10, 10));
+        return p;
     }
 
-    private JScrollPane createStyledScrollPane(Component component) {
-        JScrollPane scrollPane = new JScrollPane(component);
-        scrollPane.setBorder(new LineBorder(BORDER_COLOR, 2));
-        scrollPane.getViewport().setBackground(PANEL_COLOR);
-        return scrollPane;
+    private JScrollPane createStyledScrollPane(Component c) {
+        JScrollPane sp = new JScrollPane(c);
+        sp.setBorder(new LineBorder(BORDER_COLOR, 1));
+        sp.getViewport().setBackground(PANEL_COLOR);
+        return sp;
+    }
+    
+    private <E> JList<E> createStyledList(DefaultListModel<E> m) {
+        JList<E> l = new JList<>(m);
+        l.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        l.setBackground(PANEL_COLOR);
+        l.setForeground(TEXT_COLOR);
+        l.setSelectionBackground(ACCENT_COLOR);
+        l.setSelectionForeground(BACKGROUND_COLOR);
+        l.setFixedCellHeight(30);
+        return l;
+    }
+    
+    private JPanel createButtonPanel() {
+        JPanel p = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
+        p.setBackground(BACKGROUND_COLOR);
+        return p;
     }
 
-    private <E> JList<E> createStyledList(DefaultListModel<E> model) {
-        JList<E> list = new JList<>(model);
-        list.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        list.setBackground(PANEL_COLOR);
-        list.setForeground(TEXT_COLOR);
-        list.setSelectionBackground(ACCENT_COLOR);
-        list.setSelectionForeground(BACKGROUND_COLOR);
-        list.setBorder(new EmptyBorder(5, 5, 5, 5));
-        return list;
-    }
-
-    // ==================== NEW FEATURES METHODS ====================
-
-    /**
-     * Hiển thị reaction nhận được
-     */
-    public void displayReaction(Message msg) {
-        SwingUtilities.invokeLater(() -> {
-            String reactionInfo = String.format("%s reacted %s to message %s",
-                    msg.getSender(), msg.getReactionType(), msg.getMessageId());
-            showInfo(reactionInfo);
-        });
-    }
-
-    /**
-     * Mở video call window
-     */
-    public void openVideoCallWindow(String otherUser, String callId, boolean videoEnabled, boolean audioEnabled) {
+    public void showError(String msg) { SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this, msg, "Error", JOptionPane.ERROR_MESSAGE)); }
+    public void showInfo(String msg) { SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this, msg, "Info", JOptionPane.INFORMATION_MESSAGE)); }
+    
+    public void displayReaction(Message msg) { showInfo(msg.getSender() + " reacted " + msg.getReactionType()); }
+    
+    public void openVideoCallWindow(String user, String id, boolean video, boolean audio) {
         SwingUtilities.invokeLater(() -> {
             try {
-                VideoCallWindow videoWindow = new VideoCallWindow(otherUser, callId, videoEnabled, client);
-                videoWindow.setVisible(true);
-            } catch (Exception e) {
-                e.printStackTrace();
-                showError("Failed to open video call window: " + e.getMessage());
-            }
+                VideoCallWindow win = new VideoCallWindow(user, id, video, client);
+                win.setVisible(true);
+            } catch (Exception e) { e.printStackTrace(); }
         });
     }
+    
+ // 1. Logic Emoji
+    private void showEmojiPicker(JTextField targetField) {
+        JDialog emojiDialog = new JDialog(this, "Select Emoji", true);
+        emojiDialog.setLayout(new BorderLayout());
+        emojiDialog.setSize(600, 400);
+        emojiDialog.setLocationRelativeTo(this);
 
-    /**
-     * Đóng video call window
-     */
-    public void closeVideoCallWindow() {
-        SwingUtilities.invokeLater(() -> {
-            showInfo("Video call ended.");
-        });
+        JPanel grid = new JPanel(new GridLayout(0, 10, 5, 5));
+        grid.setBackground(PANEL_COLOR);
+        grid.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+        List<String> emojis = IconManager.getAvailableEmojiIcons();
+        if (emojis.isEmpty()) {
+            grid.add(new JLabel("No icons found in resources/icons/"));
+        } else {
+            for (String iconName : emojis) {
+                JButton btn = new JButton(IconManager.loadIcon(iconName, 32));
+                btn.setPreferredSize(new Dimension(40, 40));
+                btn.setBackground(PANEL_COLOR);
+                btn.setBorder(BorderFactory.createLineBorder(BORDER_COLOR));
+                btn.setFocusPainted(false);
+                btn.addActionListener(e -> {
+                    String code = IconManager.getEmojiCode(iconName);
+                    targetField.setText(targetField.getText() + code);
+                    emojiDialog.dispose();
+                });
+                grid.add(btn);
+            }
+        }
+        
+        JScrollPane scroll = new JScrollPane(grid);
+        scroll.setBorder(null);
+        emojiDialog.add(scroll);
+        emojiDialog.setVisible(true);
+    }
+
+    // 2. Logic Gửi File
+    private void sendFile(String mode) {
+        // Kiểm tra điều kiện trước
+        String receiver = null;
+        if (mode.equals("private")) {
+            String selected = userList.getSelectedValue();
+            if (selected == null) { showError("Select a user first!"); return; }
+            receiver = selected.split(" \\(")[0];
+        } else if (mode.equals("room")) {
+            if (currentRoom == null) { showError("Join a room first!"); return; }
+            receiver = currentRoom;
+        }
+
+        JFileChooser ch = new JFileChooser();
+        if (ch.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            File f = ch.getSelectedFile();
+            if (f.length() > 50 * 1024 * 1024) { // 50MB limit
+                showError("File too large (>50MB)");
+                return;
+            }
+            client.sendFile(f, receiver, mode);
+        }
+    }
+
+    // 3. Logic Chụp màn hình (Screen)
+    private void sendScreenshot(String mode) {
+        String receiver = null;
+        if (mode.equals("private")) {
+            String selected = userList.getSelectedValue();
+            if (selected == null) { showError("Select a user first!"); return; }
+            receiver = selected.split(" \\(")[0];
+        } else if (mode.equals("room")) {
+            if (currentRoom == null) { showError("Join a room first!"); return; }
+            receiver = currentRoom;
+        }
+        
+        // Gọi hàm bên Client để xử lý chụp và gửi
+        client.sendScreenshot(receiver, mode);
+    }
+
+    // 4. Logic Gọi điện (Call)
+    private void startVideoCall() {
+        String selected = userList.getSelectedValue();
+        if (selected == null) { showError("Select a user to call!"); return; }
+        
+        String receiver = selected.split(" \\(")[0];
+        if (receiver.equals(client.getUsername())) { showError("Cannot call yourself!"); return; }
+
+        String[] options = { "Video Call", "Audio Call", "Cancel" };
+        int choice = JOptionPane.showOptionDialog(this, 
+            "Call " + receiver + "?", "Start Call", 
+            JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE, 
+            null, options, options[0]);
+
+        if (choice == 0) client.sendVideoCallRequest(receiver, true, true);      // Video
+        else if (choice == 1) client.sendVideoCallRequest(receiver, false, true); // Audio
     }
 
     public static void main(String[] args) {

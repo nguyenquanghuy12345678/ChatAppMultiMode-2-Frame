@@ -2,6 +2,7 @@ package client;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.sound.sampled.*; // Thư viện âm thanh
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
@@ -10,25 +11,22 @@ import javax.imageio.ImageIO;
 
 public class VideoCallWindow extends JFrame {
     private static final long serialVersionUID = 1L;
-    
     private static final Color BACKGROUND_COLOR = new Color(30, 30, 46);
-    private static final Color PANEL_COLOR = new Color(40, 42, 54);
-    private static final Color ACCENT_COLOR = new Color(139, 233, 253);
-    private static final Color ERROR_COLOR = new Color(255, 85, 85);
-    private static final Color SUCCESS_COLOR = new Color(80, 250, 123);
     
     private JLabel localVideoLabel;
     private JLabel remoteVideoLabel;
     private JButton endCallButton;
-    private JButton muteButton;
-    private JButton cameraButton;
     private JLabel statusLabel;
     
     private WebcamCapture webcam;
     private volatile boolean running = false;
     private volatile boolean cameraEnabled = true;
     private Thread captureThread;
-    private Thread streamThread;
+    
+    // --- AUDIO COMPONENTS ---
+    private TargetDataLine microphone; // Thu
+    private SourceDataLine speakers;   // Phát
+    private Thread audioThread;
     
     private String partnerName;
     private String callId;
@@ -43,56 +41,45 @@ public class VideoCallWindow extends JFrame {
         
         initComponents();
         
+        // Bắt đầu Video nếu có yêu cầu
         if (videoEnabled) {
             startCamera();
         } else {
-            // Audio only mode
-            localVideoLabel.setText("Audio Only Call");
-            remoteVideoLabel.setText("Audio Only Call");
-            localVideoLabel.setFont(new Font("Segoe UI", Font.BOLD, 24));
-            remoteVideoLabel.setFont(new Font("Segoe UI", Font.BOLD, 24));
+            localVideoLabel.setText("AUDIO ONLY");
+            remoteVideoLabel.setText("AUDIO ONLY");
             localVideoLabel.setForeground(Color.WHITE);
             remoteVideoLabel.setForeground(Color.WHITE);
+            localVideoLabel.setFont(new Font("Segoe UI", Font.BOLD, 20));
+            remoteVideoLabel.setFont(new Font("Segoe UI", Font.BOLD, 20));
         }
+        
+        // Luôn bắt đầu Audio khi gọi
+        startAudio();
     }
     
     private void initComponents() {
-        String windowTitle = isVideoCall ? "Video Call - " + partnerName : "Audio Call - " + partnerName;
-        setTitle(windowTitle);
-        setSize(900, 600);
+        setTitle((isVideoCall ? "Video" : "Audio") + " Call - " + partnerName);
+        setSize(800, 600);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
-        
-        // Handle window close event
-        addWindowListener(new java.awt.event.WindowAdapter() {
-            @Override
-            public void windowClosing(java.awt.event.WindowEvent windowEvent) {
-                endCall();
-            }
-        });
         
         JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
         mainPanel.setBackground(BACKGROUND_COLOR);
         mainPanel.setBorder(new EmptyBorder(15, 15, 15, 15));
         
-        statusLabel = new JLabel("Connected with " + partnerName);
+        statusLabel = new JLabel("Calling " + partnerName + "...");
+        statusLabel.setForeground(Color.WHITE);
         statusLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
-        
-        localVideoLabel = new JLabel("Camera starting...");
-        localVideoLabel.setHorizontalAlignment(JLabel.CENTER);
-        localVideoLabel.setBackground(Color.BLACK);
-        localVideoLabel.setOpaque(true);
-        
-        remoteVideoLabel = new JLabel("Waiting for video...");
-        remoteVideoLabel.setHorizontalAlignment(JLabel.CENTER);
-        remoteVideoLabel.setBackground(Color.BLACK);
-        remoteVideoLabel.setOpaque(true);
+        mainPanel.add(statusLabel, BorderLayout.NORTH);
         
         JPanel videoPanel = new JPanel(new GridLayout(1, 2, 10, 0));
+        videoPanel.setBackground(BACKGROUND_COLOR);
+        
+        localVideoLabel = createVideoLabel("Local");
+        remoteVideoLabel = createVideoLabel("Remote");
+        
         videoPanel.add(localVideoLabel);
         videoPanel.add(remoteVideoLabel);
-        
-        mainPanel.add(statusLabel, BorderLayout.NORTH);
         mainPanel.add(videoPanel, BorderLayout.CENTER);
         
         endCallButton = new JButton("End Call");
@@ -102,96 +89,125 @@ public class VideoCallWindow extends JFrame {
         add(mainPanel);
     }
     
+    private JLabel createVideoLabel(String text) {
+        JLabel lbl = new JLabel(text, SwingConstants.CENTER);
+        lbl.setBackground(Color.BLACK);
+        lbl.setOpaque(true);
+        lbl.setForeground(Color.WHITE);
+        return lbl;
+    }
+    
+    // --- CAMERA LOGIC ---
     private void startCamera() {
         running = true;
         captureThread = new Thread(() -> {
             try {
                 webcam = new WebcamCapture();
-                if (!webcam.isAvailable()) {
-                    SwingUtilities.invokeLater(() -> localVideoLabel.setText("No camera"));
-                    return;
-                }
-                
-                webcam.start();
-                SwingUtilities.invokeLater(() -> statusLabel.setText("Camera active"));
-
-                while (running && cameraEnabled) {
-                    BufferedImage image = webcam.captureFrame();
-                    if (image != null) {
-                        // Hiển thị local
-                        SwingUtilities.invokeLater(() -> {
-                            ImageIcon scaledIcon = new ImageIcon(image.getScaledInstance(
-                                localVideoLabel.getWidth(), localVideoLabel.getHeight(), Image.SCALE_FAST));
-                            localVideoLabel.setIcon(scaledIcon);
-                        });
-                        
-                        // Stream tới remote user
-                        if (client != null) {
-                            try {
-                                ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                                ImageIO.write(image, "jpg", baos);
-                                byte[] frameData = baos.toByteArray();
-                                client.sendVideoFrame(partnerName, callId, frameData);
-                            } catch (Exception e) {
-                                // Ignore streaming errors
-                            }
+                if (webcam.isAvailable()) {
+                    webcam.start();
+                    while (running && cameraEnabled) {
+                        BufferedImage img = webcam.captureFrame();
+                        if (img != null) {
+                            // Show Local
+                            SwingUtilities.invokeLater(() -> {
+                                ImageIcon icon = new ImageIcon(img.getScaledInstance(
+                                    localVideoLabel.getWidth(), localVideoLabel.getHeight(), Image.SCALE_FAST));
+                                localVideoLabel.setIcon(icon);
+                            });
+                            // Send Remote
+                            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                            ImageIO.write(img, "jpg", baos);
+                            client.sendVideoFrame(partnerName, callId, baos.toByteArray());
                         }
+                        Thread.sleep(100);
                     }
-                    Thread.sleep(100); // ~10 FPS for network streaming
+                    webcam.stop();
                 }
-                webcam.stop();
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+            } catch (Exception e) { e.printStackTrace(); }
         });
         captureThread.start();
+    }
+    
+    // --- AUDIO LOGIC (MỚI) ---
+    private void startAudio() {
+        try {
+            AudioFormat format = new AudioFormat(8000.0f, 16, 1, true, true);
+            
+            // Setup Mic
+            DataLine.Info micInfo = new DataLine.Info(TargetDataLine.class, format);
+            if (AudioSystem.isLineSupported(micInfo)) {
+                microphone = (TargetDataLine) AudioSystem.getLine(micInfo);
+                microphone.open(format);
+                microphone.start();
+                
+                running = true;
+                audioThread = new Thread(() -> {
+                    byte[] buffer = new byte[1024];
+                    while (running && microphone.isOpen()) {
+                        int read = microphone.read(buffer, 0, buffer.length);
+                        if (read > 0) {
+                            client.sendAudioData(partnerName, callId, buffer);
+                        }
+                    }
+                });
+                audioThread.start();
+            } else {
+                System.err.println("Microphone not supported!");
+            }
+            
+            // Setup Speaker
+            DataLine.Info speakerInfo = new DataLine.Info(SourceDataLine.class, format);
+            if (AudioSystem.isLineSupported(speakerInfo)) {
+                speakers = (SourceDataLine) AudioSystem.getLine(speakerInfo);
+                speakers.open(format);
+                speakers.start();
+            } else {
+                System.err.println("Speakers not supported!");
+            }
+            
+        } catch (Exception e) { e.printStackTrace(); }
+    }
+    
+    public void playAudio(byte[] data) {
+        if (speakers != null && data != null) {
+            speakers.write(data, 0, data.length);
+        }
+    }
+    
+    public void displayRemoteFrame(byte[] data) {
+        try {
+            ByteArrayInputStream bais = new ByteArrayInputStream(data);
+            BufferedImage img = ImageIO.read(bais);
+            if (img != null) {
+                SwingUtilities.invokeLater(() -> {
+                    ImageIcon icon = new ImageIcon(img.getScaledInstance(
+                        remoteVideoLabel.getWidth(), remoteVideoLabel.getHeight(), Image.SCALE_FAST));
+                    remoteVideoLabel.setIcon(icon);
+                });
+            }
+        } catch (Exception e) {}
     }
     
     public void endCall() {
         running = false;
         if (webcam != null) webcam.stop();
         if (captureThread != null) captureThread.interrupt();
-        if (streamThread != null) streamThread.interrupt();
-        if (client != null) {
-            client.endVideoCall(partnerName, callId);
-            client.cleanupCallWindow();
-        }
+        
+        if (microphone != null) microphone.close();
+        if (speakers != null) speakers.close();
+        if (audioThread != null) audioThread.interrupt();
+        
+        client.endVideoCall(partnerName, callId);
+        client.cleanupCallWindow();
         dispose();
     }
     
-    /**
-     * Force close without sending end message (khi remote đã end)
-     */
     public void forceClose() {
         running = false;
         if (webcam != null) webcam.stop();
-        if (captureThread != null) captureThread.interrupt();
-        if (streamThread != null) streamThread.interrupt();
-        if (client != null) {
-            client.cleanupCallWindow();
-        }
+        if (microphone != null) microphone.close();
+        if (speakers != null) speakers.close();
+        client.cleanupCallWindow();
         dispose();
-    }
-    
-    /**
-     * Hiển thị remote frame từ byte array
-     */
-    public void displayRemoteFrame(byte[] frameData) {
-        if (frameData != null && frameData.length > 0) {
-            try {
-                ByteArrayInputStream bais = new ByteArrayInputStream(frameData);
-                BufferedImage image = ImageIO.read(bais);
-                if (image != null) {
-                    SwingUtilities.invokeLater(() -> {
-                        ImageIcon scaledIcon = new ImageIcon(image.getScaledInstance(
-                            remoteVideoLabel.getWidth(), remoteVideoLabel.getHeight(), Image.SCALE_FAST));
-                        remoteVideoLabel.setIcon(scaledIcon);
-                        remoteVideoLabel.setText(""); // Xóa text "Waiting for video..."
-                    });
-                }
-            } catch (Exception e) {
-                System.err.println("Error displaying remote frame: " + e.getMessage());
-            }
-        }
     }
 }
