@@ -118,10 +118,8 @@ public class ChatServer {
         ClientHandler sender = clients.get(msg.getSender());
         if (receiver != null) {
             receiver.sendMessage(msg);
-            // Echo lại cho sender (trừ file/screenshot để tránh double)
-            if (sender != null && 
-                msg.getType() != Message.MessageType.FILE_TRANSFER && 
-                msg.getType() != Message.MessageType.SCREENSHOT) {
+            // Echo lại cho sender để đồng bộ (client không tự render nữa)
+            if (sender != null) {
                 sender.sendMessage(msg);
             }
         }
