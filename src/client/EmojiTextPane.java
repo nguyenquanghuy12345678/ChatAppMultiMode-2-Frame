@@ -8,11 +8,6 @@ import java.awt.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import javax.swing.*;
-import javax.swing.text.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
 /**
  * Custom JTextPane that can display emoji icons inline with text
  */

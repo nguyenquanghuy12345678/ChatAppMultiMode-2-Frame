@@ -23,6 +23,12 @@ public class VideoCallWindow extends JFrame {
     private volatile boolean cameraEnabled = true;
     private Thread captureThread;
     
+    // Performance improvements
+    private static final int TARGET_FPS = 25;
+    private static final int FRAME_DELAY_MS = 1000 / TARGET_FPS; // 40ms for 25 FPS
+    private long lastFrameTime = 0;
+    private int droppedFrames = 0;
+    
     // --- AUDIO COMPONENTS ---
     private TargetDataLine microphone; // Thu
     private SourceDataLine speakers;   // Phát
@@ -101,30 +107,97 @@ public class VideoCallWindow extends JFrame {
     private void startCamera() {
         running = true;
         captureThread = new Thread(() -> {
+            WebcamCapture localWebcam = null;
             try {
-                webcam = new WebcamCapture();
-                if (webcam.isAvailable()) {
-                    webcam.start();
+                localWebcam = new WebcamCapture();
+                if (localWebcam.isAvailable()) {
+                    localWebcam.start();
+                    webcam = localWebcam;
+                    
+                    lastFrameTime = System.currentTimeMillis();
+                    
                     while (running && cameraEnabled) {
-                        BufferedImage img = webcam.captureFrame();
-                        if (img != null) {
-                            // Show Local
-                            SwingUtilities.invokeLater(() -> {
-                                ImageIcon icon = new ImageIcon(img.getScaledInstance(
-                                    localVideoLabel.getWidth(), localVideoLabel.getHeight(), Image.SCALE_FAST));
-                                localVideoLabel.setIcon(icon);
-                            });
-                            // Send Remote
-                            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                            ImageIO.write(img, "jpg", baos);
-                            client.sendVideoFrame(partnerName, callId, baos.toByteArray());
+                        long currentTime = System.currentTimeMillis();
+                        long timeSinceLastFrame = currentTime - lastFrameTime;
+                        
+                        // Frame rate limiting
+                        if (timeSinceLastFrame < FRAME_DELAY_MS) {
+                            Thread.sleep(FRAME_DELAY_MS - timeSinceLastFrame);
+                            continue;
                         }
-                        Thread.sleep(100);
+                        
+                        try {
+                            BufferedImage img = webcam.captureFrame();
+                            if (img != null) {
+                                lastFrameTime = currentTime;
+                                
+                                // Show Local (non-blocking)
+                                BufferedImage localImg = img;
+                                SwingUtilities.invokeLater(() -> {
+                                    try {
+                                        ImageIcon icon = new ImageIcon(localImg.getScaledInstance(
+                                            localVideoLabel.getWidth(), localVideoLabel.getHeight(), Image.SCALE_FAST));
+                                        localVideoLabel.setIcon(icon);
+                                    } catch (Exception e) {
+                                        // Ignore UI update errors
+                                    }
+                                });
+                                
+                                // Send Remote with compression
+                                try {
+                                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                                    // Use JPEG writer with quality control
+                                    if (!ImageIO.write(img, "jpg", baos)) {
+                                        System.err.println("Failed to encode frame");
+                                        continue;
+                                    }
+                                    
+                                    byte[] frameData = baos.toByteArray();
+                                    
+                                    // Drop frame if too large (> 100KB)
+                                    if (frameData.length > 102400) {
+                                        droppedFrames++;
+                                        if (droppedFrames % 10 == 0) {
+                                            System.out.println("⚠ Dropped " + droppedFrames + " frames (too large)");
+                                        }
+                                        continue;
+                                    }
+                                    
+                                    client.sendVideoFrame(partnerName, callId, frameData);
+                                } catch (Exception e) {
+                                    System.err.println("Error encoding/sending frame: " + e.getMessage());
+                                }
+                            }
+                        } catch (Exception e) {
+                            System.err.println("Error capturing frame: " + e.getMessage());
+                            Thread.sleep(100); // Back off on errors
+                        }
                     }
-                    webcam.stop();
+                    
+                    if (webcam != null) {
+                        webcam.stop();
+                    }
+                    
+                    System.out.println("Camera stopped. Total dropped frames: " + droppedFrames);
+                } else {
+                    SwingUtilities.invokeLater(() -> {
+                        localVideoLabel.setText("NO CAMERA");
+                        localVideoLabel.setForeground(Color.RED);
+                    });
                 }
-            } catch (Exception e) { e.printStackTrace(); }
+            } catch (Exception e) { 
+                System.err.println("Camera thread error: " + e.getMessage());
+                e.printStackTrace();
+                if (localWebcam != null) {
+                    try {
+                        localWebcam.forceRelease();
+                    } catch (Exception ex) {
+                        // Ignore cleanup errors
+                    }
+                }
+            }
         });
+        captureThread.setName("VideoCapture-" + partnerName);
         captureThread.start();
     }
     
@@ -190,12 +263,52 @@ public class VideoCallWindow extends JFrame {
     
     public void endCall() {
         running = false;
-        if (webcam != null) webcam.stop();
-        if (captureThread != null) captureThread.interrupt();
         
-        if (microphone != null) microphone.close();
-        if (speakers != null) speakers.close();
-        if (audioThread != null) audioThread.interrupt();
+        // Stop camera
+        if (webcam != null) {
+            try {
+                webcam.forceRelease();
+            } catch (Exception e) {
+                System.err.println("Error stopping webcam: " + e.getMessage());
+            }
+        }
+        
+        if (captureThread != null) {
+            captureThread.interrupt();
+            try {
+                captureThread.join(2000); // Wait max 2s
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        
+        // Stop audio
+        if (microphone != null) {
+            try {
+                microphone.stop();
+                microphone.close();
+            } catch (Exception e) {
+                System.err.println("Error stopping microphone: " + e.getMessage());
+            }
+        }
+        
+        if (speakers != null) {
+            try {
+                speakers.stop();
+                speakers.close();
+            } catch (Exception e) {
+                System.err.println("Error stopping speakers: " + e.getMessage());
+            }
+        }
+        
+        if (audioThread != null) {
+            audioThread.interrupt();
+            try {
+                audioThread.join(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
         
         client.endVideoCall(partnerName, callId);
         client.cleanupCallWindow();
@@ -204,9 +317,33 @@ public class VideoCallWindow extends JFrame {
     
     public void forceClose() {
         running = false;
-        if (webcam != null) webcam.stop();
-        if (microphone != null) microphone.close();
-        if (speakers != null) speakers.close();
+        
+        if (webcam != null) {
+            try {
+                webcam.forceRelease();
+            } catch (Exception e) {
+                // Ignore
+            }
+        }
+        
+        if (microphone != null) {
+            try {
+                microphone.stop();
+                microphone.close();
+            } catch (Exception e) {
+                // Ignore
+            }
+        }
+        
+        if (speakers != null) {
+            try {
+                speakers.stop();
+                speakers.close();
+            } catch (Exception e) {
+                // Ignore
+            }
+        }
+        
         client.cleanupCallWindow();
         dispose();
     }

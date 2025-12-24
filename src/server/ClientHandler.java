@@ -22,9 +22,11 @@ public class ClientHandler extends Thread {
     @Override
     public void run() {
         try {
-            output = new ObjectOutputStream(socket.getOutputStream());
+            // Tăng buffer size lên 1MB (như Zoom/Teams) để xử lý video call thực tế
+            java.io.BufferedOutputStream bufferedOut = new java.io.BufferedOutputStream(socket.getOutputStream(), 1048576);
+            output = new ObjectOutputStream(bufferedOut);
             output.flush();
-            input = new ObjectInputStream(socket.getInputStream());
+            input = new ObjectInputStream(new java.io.BufferedInputStream(socket.getInputStream(), 1048576));
             
             // Đọc tin nhắn đầu tiên (Login hoặc Register)
             Message firstMsg = (Message) input.readObject();
@@ -141,6 +143,11 @@ public class ClientHandler extends Thread {
             case JOIN_ROOM: server.joinRoom(msg.getContent(), msg.getSender()); break;
             case LEAVE_ROOM: server.leaveRoom(msg.getContent(), msg.getSender()); break;
             case LOGOUT: running = false; break;
+            
+            // Các message type xử lý ở nơi khác (LOGIN/REGISTER trong run(), USER_LIST/ROOM_LIST/SUCCESS/ERROR là server response)
+            default:
+                // Ignore hoặc log nếu cần
+                break;
         }
     }
 
@@ -170,7 +177,10 @@ public class ClientHandler extends Thread {
         try {
             output.writeObject(msg);
             output.flush();
-        } catch (IOException e) { e.printStackTrace(); }
+            output.reset(); // Xóa cache để tránh memory leak và lỗi buffer
+        } catch (IOException e) { 
+            if (running) e.printStackTrace(); 
+        }
     }
     
     public User getUser() { return user; }

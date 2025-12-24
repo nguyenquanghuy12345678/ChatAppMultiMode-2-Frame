@@ -10,7 +10,9 @@ import java.util.List;
 import javax.swing.JOptionPane;
 
 public class ChatClient {
+    @SuppressWarnings("unused")
     private String serverIP;
+    @SuppressWarnings("unused")
     private int serverPort;
     private String username;
     private Socket socket;
@@ -36,9 +38,10 @@ public class ChatClient {
             this.username = username;
             
             socket = new Socket(serverIP, serverPort);
-            output = new ObjectOutputStream(socket.getOutputStream());
+            // Tăng buffer size lên 1MB (như Zoom/Teams) để xử lý video call thực tế
+            output = new ObjectOutputStream(new java.io.BufferedOutputStream(socket.getOutputStream(), 1048576));
             output.flush();
-            input = new ObjectInputStream(socket.getInputStream());
+            input = new ObjectInputStream(new java.io.BufferedInputStream(socket.getInputStream(), 1048576));
             
             Message loginMsg = new Message(Message.MessageType.LOGIN, username, "");
             loginMsg.setPassword(password);
@@ -64,8 +67,8 @@ public class ChatClient {
     public boolean register(String serverIP, int serverPort, String username, String password) {
         try {
             Socket tempSocket = new Socket(serverIP, serverPort);
-            ObjectOutputStream tempOut = new ObjectOutputStream(tempSocket.getOutputStream());
-            ObjectInputStream tempIn = new ObjectInputStream(tempSocket.getInputStream());
+            ObjectOutputStream tempOut = new ObjectOutputStream(new java.io.BufferedOutputStream(tempSocket.getOutputStream(), 1048576));
+            ObjectInputStream tempIn = new ObjectInputStream(new java.io.BufferedInputStream(tempSocket.getInputStream(), 1048576));
             
             Message regMsg = new Message(Message.MessageType.REGISTER, username, "");
             regMsg.setPassword(password);
@@ -138,8 +141,18 @@ public class ChatClient {
         }
     }
     
-    public void sendMessage(Message msg) {
-        try { output.writeObject(msg); output.flush(); } catch (IOException e) { e.printStackTrace(); }
+    public synchronized void sendMessage(Message msg) {
+        try { 
+            output.writeObject(msg); 
+            output.flush(); 
+            // Only reset for non-streaming messages to avoid memory leak
+            // Skip reset for audio/video data to prevent "stream active" errors
+            Message.MessageType type = msg.getType();
+            if (type != Message.MessageType.AUDIO_DATA && 
+                type != Message.MessageType.VIDEO_FRAME) {
+                output.reset();
+            }
+        } catch (IOException e) { e.printStackTrace(); }
     }
     
     // --- 3. CÁC HÀM GỬI TIN & FILE (Nút Gửi gọi cái này) ---
